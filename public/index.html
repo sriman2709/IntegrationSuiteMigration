@@ -206,13 +206,14 @@ select.form-control{cursor:pointer;}
 /* ── QA RESULTS ──────────────────────────────────────────────────── */
 .qa-section{margin-bottom:20px;}
 .qa-section h4{font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text-primary);}
-.qa-check{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:var(--main-bg);margin-bottom:6px;}
-.qa-check .check-name{font-size:12px;flex:1;}
-.qa-status{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;}
+.qa-check{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;border-radius:6px;background:var(--main-bg);margin-bottom:6px;}
+.qa-check .check-name{font-size:12px;flex:1;padding-top:1px;line-height:1.4;}
+.qa-check .check-result{flex-shrink:0;min-width:110px;text-align:right;}
+.qa-status{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;}
 .qa-status.pass{color:var(--success);}
 .qa-status.warning{color:#D97706;}
 .qa-status.fail{color:var(--danger);}
-.qa-message{font-size:11px;color:var(--text-muted);margin-top:2px;}
+.qa-message{font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.4;}
 
 /* ── DEPLOY RESULTS ──────────────────────────────────────────────── */
 .deploy-info{background:var(--main-bg);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
@@ -220,7 +221,8 @@ select.form-control{cursor:pointer;}
 .deploy-info td{padding:4px 8px;font-size:13px;color:var(--text-secondary);}
 .deploy-info td:first-child{font-weight:600;color:var(--text-primary);width:180px;}
 .deploy-checks{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
-.deploy-check{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--main-bg);border-radius:6px;font-size:12px;}
+.deploy-check{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;background:var(--main-bg);border-radius:6px;font-size:12px;}
+.deploy-check>span{flex-shrink:0;margin-top:1px;line-height:1;}
 
 /* ── PROGRESS ANIMATION ──────────────────────────────────────────── */
 .progress-bar-wrap{background:#E5E7EB;border-radius:4px;height:6px;overflow:hidden;margin-top:8px;}
@@ -1564,22 +1566,31 @@ function renderValidateResults(val) {
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
         ${Object.entries(ib).map(([k, v]) => `
           <div class="deploy-check">
-            <span>${(v.status||'pass') === 'pass' ? '✅' : '⚠️'}</span>
-            <div>
-              <div style="font-size:12px;font-weight:600;">${k.charAt(0).toUpperCase() + k.slice(1)}</div>
-              <div style="font-size:11px;color:var(--text-secondary);">${esc(v.message || '')}</div>
+            <span style="font-size:15px;line-height:1;margin-top:1px;flex-shrink:0;">${(v.status||'pass')==='pass'?'✅':'⚠️'}</span>
+            <div style="min-width:0;">
+              <div style="font-size:12px;font-weight:600;color:var(--text-primary);line-height:1.3;">${k.charAt(0).toUpperCase()+k.slice(1).replace(/_/g,' ')}</div>
+              <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;line-height:1.4;white-space:normal;">${esc(v.message||'')}</div>
             </div>
           </div>`).join('')}
       </div>
     </div>
 
     ${is_sum.total_applications ? `<div class="card" style="padding:16px;">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px;">Integration Suite Summary</div>
-      <div style="display:flex;gap:24px;">
-        <div><div style="font-size:20px;font-weight:700;">${is_sum.total_applications}</div><div style="font-size:11px;color:var(--text-secondary);">Total Applications</div></div>
-        <div><div style="font-size:20px;font-weight:700;">${is_sum.migrated}</div><div style="font-size:11px;color:var(--text-secondary);">Migrated</div></div>
-        <div><div style="font-size:20px;font-weight:700;">${is_sum.deployed}</div><div style="font-size:11px;color:var(--text-secondary);">Deployed</div></div>
-        <div><span class="badge badge-green">${esc(is_sum.status || 'Active')}</span></div>
+      <div style="font-size:13px;font-weight:700;margin-bottom:14px;">Integration Suite Summary</div>
+      <div style="display:flex;align-items:center;gap:32px;">
+        <div style="text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--text-primary);line-height:1.2;">${is_sum.total_applications}</div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:3px;">Total Applications</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--text-primary);line-height:1.2;">${is_sum.migrated}</div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:3px;">Migrated</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:var(--text-primary);line-height:1.2;">${is_sum.deployed}</div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:3px;">Deployed</div>
+        </div>
+        <div style="margin-left:auto;"><span class="badge badge-green" style="font-size:12px;padding:5px 12px;">${esc(is_sum.status||'Active')}</span></div>
       </div>
     </div>` : ''}
   `;
@@ -1589,10 +1600,11 @@ function renderValidateResults(val) {
 function renderValSection(obj) {
   return Object.entries(obj).map(([k, v]) => {
     if (typeof v !== 'object') return '';
-    return `<div class="qa-check" style="margin-bottom:6px;">
+    const st = v.status || 'pass';
+    return `<div class="qa-check">
       <span class="check-name">${k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</span>
-      <div>
-        <div class="qa-status ${v.status||'pass'}">${(v.status||'pass')==='pass'?'✅ Pass':'⚠️ Warning'}</div>
+      <div class="check-result">
+        <div class="qa-status ${st}">${st==='pass'?'✅ Pass': st==='warning'?'⚠️ Warning':'❌ Fail'}</div>
         ${v.message ? `<div class="qa-message">${esc(v.message)}</div>` : ''}
       </div>
     </div>`;
