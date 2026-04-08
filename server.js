@@ -3,7 +3,8 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-const { initDb } = require('./database/db');
+const { initDb, pool } = require('./database/db');
+const { runSeed } = require('./database/seed');
 
 const app = express();
 app.use(cors());
@@ -29,11 +30,27 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 4001;
 
-initDb().then(() => {
+async function start() {
+  await initDb();
+
+  // Auto-seed demo data on first boot (if no projects exist)
+  try {
+    const { rows } = await pool.query('SELECT COUNT(*) FROM projects');
+    if (parseInt(rows[0].count) === 0) {
+      console.log('No data found — seeding demo data...');
+      await runSeed();
+      console.log('Demo data seeded ✓');
+    }
+  } catch (e) {
+    console.warn('Auto-seed skipped:', e.message);
+  }
+
   app.listen(PORT, () => {
     console.log(`Integration Suite Migration Tool running on http://localhost:${PORT}`);
   });
-}).catch(err => {
-  console.error('Failed to initialize database:', err);
+}
+
+start().catch(err => {
+  console.error('Failed to start server:', err);
   process.exit(1);
 });
