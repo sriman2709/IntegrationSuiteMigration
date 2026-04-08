@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bns:Components xmlns:bns="http://api.platform.boomi.com/">
+  <bns:Component type="process" name="SO_Create_SAP_from_Salesforce" componentId="dd8a1ad9-f83b-4e0c-bdeb-fc82846e7ae7" version="4">
+    <bns:process>
+      <bns:shapes count="18">
+        <bns:shape type="connector" subtype="salesforce" name="Get Opportunities"/>
+        <bns:shape type="map" name="SF_to_SAP_Order"/>
+        <bns:shape type="connector" subtype="sap_s4hana" name="Create Sales Order"/>
+        <bns:shape type="decision" name="Check_Order_Valid"/>
+        <bns:shape type="notify" name="Notify_CRM_Team"/>
+        <bns:shape type="set_properties" name="Set_Order_Ref"/>
+        <bns:shape type="map" name="Map_Line_Items"/>
+        <bns:shape type="message" name="Log_Success"/>
+      </bns:shapes>
+      <bns:connectors count="2">
+        <bns:connector type="Salesforce" operation="QUERY"/>
+        <bns:connector type="SAP S/4HANA" operation="BAPI_SALESORDER_CREATEFROMDAT2"/>
+      </bns:connectors>
+      <bns:maps count="2"/>
+      <bns:scripts count="0"/>
+      <bns:errorHandling type="basic"/>
+      <bns:dependencies count="2"/>
+      <bns:trigger type="API"/>
+      <bns:domain>CRM</bns:domain>
+    </bns:process>
+  </bns:Component>
+  <bns:Component type="process" name="Payroll_Delta_SF_to_SAP_PY" componentId="4d74e492-efbf-4957-8e4a-8076eda5cb29" version="3">
+    <bns:process>
+      <bns:shapes count="38"/>
+      <bns:connectors count="3">
+        <bns:connector type="SAP SuccessFactors" operation="OData Query"/>
+        <bns:connector type="SAP S/4HANA" operation="IDOC HRMD_ABA"/>
+        <bns:connector type="SFTP" operation="PUT"/>
+      </bns:connectors>
+      <bns:maps count="5"/>
+      <bns:scripts count="2" language="groovy" totalLines="80"/>
+      <bns:errorHandling type="multi_try_catch"/>
+      <bns:dependencies count="6"/>
+      <bns:trigger type="Schedule"/>
+      <bns:domain>HR</bns:domain>
+    </bns:process>
+  </bns:Component>
+  <bns:Component type="process" name="EDI_850_Inbound_PO" componentId="7c3f8b21-a4d2-4e9f-b123-def456789012" version="7">
+    <bns:process>
+      <bns:shapes count="41"/>
+      <bns:connectors count="3">
+        <bns:connector type="AS2" operation="Listener"/>
+        <bns:connector type="SAP S/4HANA" operation="IDOC ORDERS05"/>
+        <bns:connector type="SFTP" operation="PUT"/>
+      </bns:connectors>
+      <bns:maps count="5"/>
+      <bns:scripts count="3" language="groovy" totalLines="220"/>
+      <bns:errorHandling type="multi_try_catch"/>
+      <bns:dependencies count="5"/>
+      <bns:trigger type="Listener"/>
+      <bns:domain>EXT</bns:domain>
+    </bns:process>
+  </bns:Component>
+</bns:Components>

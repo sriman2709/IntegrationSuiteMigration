@@ -1,0 +1,1971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Migration Assistant — Sierra Digital</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --sidebar-bg:#1C2B3A;--sidebar-text:#8B9BAF;--sidebar-active-bg:#2D3F54;--sidebar-active:#FFFFFF;
+  --main-bg:#F8F9FA;--card-bg:#FFFFFF;--accent:#0066CC;--accent-hover:#0052A3;
+  --success:#28A745;--warning:#FFC107;--danger:#DC3545;--info:#17A2B8;
+  --border:#E5E7EB;--text-primary:#1A202C;--text-secondary:#6B7280;--text-muted:#9CA3AF;
+  --shadow:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 4px 6px rgba(0,0,0,.07),0 2px 4px rgba(0,0,0,.06);
+  --radius:8px;--radius-sm:4px;--radius-lg:12px;
+}
+body{font-family:'Inter',sans-serif;background:var(--main-bg);color:var(--text-primary);display:flex;height:100vh;overflow:hidden;font-size:14px;}
+
+/* ── SIDEBAR ─────────────────────────────────────────────────────── */
+#sidebar{width:240px;min-width:240px;background:var(--sidebar-bg);display:flex;flex-direction:column;height:100vh;overflow-y:auto;}
+.sidebar-logo{padding:20px 20px 16px;border-bottom:1px solid rgba(255,255,255,.06);}
+.sidebar-logo .company{font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:#5A7A9A;margin-bottom:4px;}
+.sidebar-logo .app-name{font-size:15px;font-weight:700;color:#FFFFFF;display:flex;align-items:center;gap:6px;}
+.sidebar-logo .app-name .badge{background:#0066CC;color:#fff;font-size:9px;padding:1px 5px;border-radius:10px;font-weight:600;}
+.nav-section{padding:12px 0 4px;border-top:1px solid rgba(255,255,255,.04);}
+.nav-section:first-of-type{border-top:none;padding-top:8px;}
+.nav-label{padding:6px 20px;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#3D5168;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 20px;cursor:pointer;color:var(--sidebar-text);font-size:13px;font-weight:500;border-left:3px solid transparent;transition:all .15s;}
+.nav-item:hover{color:#FFFFFF;background:rgba(255,255,255,.04);}
+.nav-item.active{color:var(--sidebar-active);background:var(--sidebar-active-bg);border-left-color:var(--accent);}
+.nav-item .nav-icon{width:18px;height:18px;opacity:.7;flex-shrink:0;}
+.nav-item.active .nav-icon{opacity:1;}
+.sidebar-bottom{margin-top:auto;padding:16px;border-top:1px solid rgba(255,255,255,.06);}
+.sidebar-bottom-btn{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:6px;color:var(--sidebar-text);font-size:12px;cursor:pointer;transition:all .15s;}
+.sidebar-bottom-btn:hover{background:rgba(255,255,255,.06);color:#fff;}
+
+/* ── MAIN AREA ───────────────────────────────────────────────────── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.topbar{background:#fff;border-bottom:1px solid var(--border);padding:0 24px;height:56px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);}
+.breadcrumb .crumb{cursor:pointer;transition:color .15s;}
+.breadcrumb .crumb:hover{color:var(--accent);}
+.breadcrumb .sep{color:var(--text-muted);}
+.breadcrumb .current{color:var(--text-primary);font-weight:500;}
+.topbar-right{display:flex;align-items:center;gap:12px;}
+.topbar-right .icon-btn{width:32px;height:32px;border-radius:6px;border:1px solid var(--border);background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);transition:all .15s;}
+.topbar-right .icon-btn:hover{background:var(--main-bg);color:var(--text-primary);}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;cursor:pointer;}
+
+.page-content{flex:1;overflow-y:auto;padding:24px;}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+.page-title{font-size:22px;font-weight:700;color:var(--text-primary);}
+.page-subtitle{font-size:13px;color:var(--text-secondary);margin-top:2px;}
+
+/* ── CARDS ───────────────────────────────────────────────────────── */
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
+.stat-card{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);}
+.stat-card .label{font-size:12px;font-weight:500;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
+.stat-card .value{font-size:32px;font-weight:700;color:var(--text-primary);line-height:1;}
+.stat-card .sub{font-size:12px;color:var(--text-secondary);margin-top:6px;}
+.stat-card .trend{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;margin-top:4px;}
+.stat-card .trend.up{color:var(--success);}
+.stat-card .trend.down{color:var(--danger);}
+.stat-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;}
+.si-blue{background:#EBF4FF;color:var(--accent);}
+.si-green{background:#ECFDF5;color:var(--success);}
+.si-orange{background:#FFFBEB;color:#D97706;}
+.si-purple{background:#F5F3FF;color:#7C3AED;}
+
+/* ── BUTTONS ─────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .15s;white-space:nowrap;}
+.btn-primary{background:var(--accent);color:#fff;}
+.btn-primary:hover{background:var(--accent-hover);}
+.btn-secondary{background:#fff;color:var(--text-primary);border:1px solid var(--border);}
+.btn-secondary:hover{background:var(--main-bg);}
+.btn-success{background:var(--success);color:#fff;}
+.btn-success:hover{background:#218838;}
+.btn-danger{background:var(--danger);color:#fff;}
+.btn-danger:hover{background:#C82333;}
+.btn-warning{background:var(--warning);color:#1a202c;}
+.btn-warning:hover{background:#E0A800;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-lg{padding:10px 20px;font-size:14px;}
+.btn-icon{width:32px;height:32px;padding:0;justify-content:center;}
+.btn:disabled{opacity:.55;cursor:not-allowed;}
+
+/* ── BADGES ──────────────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.badge-blue{background:#EBF4FF;color:#0066CC;}
+.badge-green{background:#ECFDF5;color:#16A34A;}
+.badge-red{background:#FEF2F2;color:#DC2626;}
+.badge-yellow{background:#FFFBEB;color:#D97706;}
+.badge-gray{background:#F3F4F6;color:#6B7280;}
+.badge-purple{background:#F5F3FF;color:#7C3AED;}
+.badge-orange{background:#FFF7ED;color:#C2410C;}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;}
+.dot-green{background:var(--success);}
+.dot-red{background:var(--danger);}
+.dot-yellow{background:var(--warning);}
+.dot-gray{background:#9CA3AF;}
+.dot-blue{background:var(--accent);}
+
+/* ── TABLES ──────────────────────────────────────────────────────── */
+.table-wrap{border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;}
+table{width:100%;border-collapse:collapse;}
+thead th{background:#F9FAFB;padding:10px 16px;text-align:left;font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--border);}
+thead th input[type=checkbox]{cursor:pointer;}
+tbody tr{border-bottom:1px solid #F3F4F6;transition:background .1s;}
+tbody tr:last-child{border-bottom:none;}
+tbody tr:hover{background:#FAFAFA;}
+tbody td{padding:12px 16px;font-size:13px;color:var(--text-primary);vertical-align:middle;}
+.clickable-row{cursor:pointer;}
+
+/* ── FORMS ───────────────────────────────────────────────────────── */
+.form-group{margin-bottom:16px;}
+.form-label{display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em;}
+.form-control{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text-primary);background:#fff;outline:none;transition:border-color .15s;}
+.form-control:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,102,204,.1);}
+select.form-control{cursor:pointer;}
+.input-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+
+/* ── MODALS ──────────────────────────────────────────────────────── */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;animation:fadeIn .15s;}
+.modal{background:#fff;border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.2);width:800px;max-width:95vw;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;animation:slideUp .2s;}
+.modal-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.modal-title{font-size:16px;font-weight:700;}
+.modal-close{width:28px;height:28px;border:none;background:transparent;cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);}
+.modal-close:hover{background:var(--main-bg);}
+.modal-body{padding:24px;overflow-y:auto;flex:1;}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0;}
+
+/* ── CONNECT SOURCE MODAL ────────────────────────────────────────── */
+.connect-halves{display:grid;grid-template-columns:1fr 1fr;gap:0;min-height:400px;}
+.connect-half{padding:24px;}
+.connect-half:first-child{border-right:1px solid var(--border);}
+.connect-half-title{font-size:14px;font-weight:700;margin-bottom:4px;}
+.connect-half-sub{font-size:12px;color:var(--text-secondary);margin-bottom:20px;}
+.drop-zone{border:2px dashed var(--border);border-radius:10px;padding:40px 24px;text-align:center;cursor:pointer;transition:all .2s;}
+.drop-zone:hover,.drop-zone.drag-over{border-color:var(--accent);background:#EBF4FF;}
+.drop-zone svg{color:var(--text-muted);margin-bottom:12px;}
+.drop-zone p{font-size:13px;color:var(--text-secondary);}
+.drop-zone .supported{font-size:11px;color:var(--text-muted);margin-top:6px;}
+#file-input{display:none;}
+
+/* ── FILTER BAR ──────────────────────────────────────────────────── */
+.filter-bar{display:flex;align-items:center;gap:10px;background:#fff;padding:12px 16px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;flex-wrap:wrap;}
+.filter-bar select,.filter-bar input{padding:6px 10px;border:1px solid var(--border);border-radius:5px;font-size:12px;color:var(--text-primary);outline:none;background:#fff;min-width:120px;}
+.filter-bar select:focus,.filter-bar input:focus{border-color:var(--accent);}
+.filter-label{font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;}
+
+/* ── ASSET SOURCE CARDS ──────────────────────────────────────────── */
+.source-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;}
+.source-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;box-shadow:var(--shadow);position:relative;cursor:pointer;transition:all .2s;}
+.source-card:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(0,102,204,.12);}
+.source-card.selected{border-color:var(--accent);background:#EBF4FF;}
+.source-card .check{position:absolute;top:12px;right:12px;width:18px;height:18px;}
+.source-card .platform-icon{width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:12px;}
+.source-card h4{font-size:14px;font-weight:700;margin-bottom:4px;}
+.source-card .platform-type{font-size:11px;color:var(--text-secondary);margin-bottom:16px;}
+.source-metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+.source-metric{text-align:center;background:var(--main-bg);border-radius:6px;padding:8px 4px;}
+.source-metric .m-val{font-size:18px;font-weight:700;color:var(--text-primary);}
+.source-metric .m-lbl{font-size:10px;color:var(--text-secondary);margin-top:1px;}
+
+/* ── TABS ────────────────────────────────────────────────────────── */
+.tab-bar{display:flex;border-bottom:2px solid var(--border);margin-bottom:24px;gap:0;}
+.tab-item{padding:10px 20px;font-size:13px;font-weight:500;color:var(--text-secondary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;white-space:nowrap;}
+.tab-item:hover{color:var(--text-primary);}
+.tab-item.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* ── ARTIFACT DETAIL ─────────────────────────────────────────────── */
+.detail-header{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px;margin-bottom:20px;}
+.detail-header .back-btn{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary);cursor:pointer;margin-bottom:12px;}
+.detail-header .back-btn:hover{color:var(--accent);}
+.detail-header h2{font-size:20px;font-weight:700;margin-bottom:8px;}
+.detail-meta{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.detail-meta .meta-item{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--text-secondary);}
+.detail-meta .meta-item strong{color:var(--text-primary);font-weight:600;}
+.action-btns{display:flex;gap:8px;}
+
+/* ── SPLIT ASSESSMENT PANE ───────────────────────────────────────── */
+.assessment-split{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+.assessment-pane{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;}
+.assessment-pane h3{font-size:14px;font-weight:700;margin-bottom:4px;}
+.assessment-pane .word-count{font-size:11px;color:var(--text-secondary);margin-bottom:16px;}
+.finding-section{margin-bottom:16px;}
+.finding-section .section-title{font-size:12px;font-weight:700;color:var(--text-primary);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.04em;}
+.finding-section ul{list-style:none;padding:0;}
+.finding-section ul li{font-size:12px;color:var(--text-secondary);padding:4px 0;padding-left:16px;position:relative;line-height:1.5;}
+.finding-section ul li::before{content:"•";position:absolute;left:0;color:var(--accent);}
+
+/* ── CONVERSION OUTPUT ───────────────────────────────────────────── */
+.conversion-output{background:#0f172a;border-radius:var(--radius);padding:20px;font-family:'Courier New',monospace;font-size:12px;line-height:1.7;color:#94a3b8;max-height:500px;overflow-y:auto;}
+.conversion-output .line-success{color:#4ade80;}
+.conversion-output .line-warning{color:#fbbf24;}
+.conversion-output .line-header{color:#60a5fa;font-weight:bold;}
+.conversion-output .line-step{color:#e2e8f0;}
+
+/* ── QA RESULTS ──────────────────────────────────────────────────── */
+.qa-section{margin-bottom:20px;}
+.qa-section h4{font-size:13px;font-weight:700;margin-bottom:12px;color:var(--text-primary);}
+.qa-check{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:var(--main-bg);margin-bottom:6px;}
+.qa-check .check-name{font-size:12px;flex:1;}
+.qa-status{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;}
+.qa-status.pass{color:var(--success);}
+.qa-status.warning{color:#D97706;}
+.qa-status.fail{color:var(--danger);}
+.qa-message{font-size:11px;color:var(--text-muted);margin-top:2px;}
+
+/* ── DEPLOY RESULTS ──────────────────────────────────────────────── */
+.deploy-info{background:var(--main-bg);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+.deploy-info table{width:100%;}
+.deploy-info td{padding:4px 8px;font-size:13px;color:var(--text-secondary);}
+.deploy-info td:first-child{font-weight:600;color:var(--text-primary);width:180px;}
+.deploy-checks{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;}
+.deploy-check{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--main-bg);border-radius:6px;font-size:12px;}
+
+/* ── PROGRESS ANIMATION ──────────────────────────────────────────── */
+.progress-bar-wrap{background:#E5E7EB;border-radius:4px;height:6px;overflow:hidden;margin-top:8px;}
+.progress-bar{height:100%;background:var(--accent);border-radius:4px;transition:width 1s;}
+
+/* ── TOAST ───────────────────────────────────────────────────────── */
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:1000;display:flex;flex-direction:column;gap:8px;}
+.toast{background:#1C2B3A;color:#fff;padding:12px 16px;border-radius:8px;font-size:13px;min-width:280px;display:flex;align-items:center;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,.2);animation:slideInRight .2s;}
+.toast.success{background:#166534;border-left:4px solid var(--success);}
+.toast.error{background:#7F1D1D;border-left:4px solid var(--danger);}
+.toast.warning{background:#78350F;border-left:4px solid var(--warning);}
+
+/* ── COMPLEXITY COLORS ───────────────────────────────────────────── */
+.complexity-simple{color:#16A34A;font-weight:600;}
+.complexity-medium{color:#D97706;font-weight:600;}
+.complexity-complex{color:#DC2626;font-weight:600;}
+.complexity-dot-simple{background:#16A34A;}
+.complexity-dot-medium{background:#D97706;}
+.complexity-dot-complex{background:#DC2626;}
+
+/* ── PLATFORM COLORS ─────────────────────────────────────────────── */
+.platform-boomi{background:#FFF3E0;color:#E65100;}
+.platform-pipo{background:#E8F5E9;color:#2E7D32;}
+.platform-tibco{background:#FCE4EC;color:#880E4F;}
+.platform-mulesoft{background:#E3F2FD;color:#1565C0;}
+
+/* ── ANIMATIONS ──────────────────────────────────────────────────── */
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideInRight{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite;}
+
+/* ── EMPTY STATE ─────────────────────────────────────────────────── */
+.empty-state{text-align:center;padding:60px 24px;}
+.empty-state svg{color:var(--text-muted);margin-bottom:16px;}
+.empty-state h3{font-size:16px;font-weight:600;margin-bottom:6px;}
+.empty-state p{font-size:13px;color:var(--text-secondary);}
+
+/* ── PAGES VISIBILITY ────────────────────────────────────────────── */
+.page{display:none;}
+.page.active{display:block;}
+
+/* ── SCORE BAR ───────────────────────────────────────────────────── */
+.score-bar{display:flex;align-items:center;gap:8px;}
+.score-track{flex:1;height:4px;background:#E5E7EB;border-radius:2px;overflow:hidden;}
+.score-fill{height:100%;border-radius:2px;}
+.score-fill.simple{background:#16A34A;}
+.score-fill.medium{background:#D97706;}
+.score-fill.complex{background:#DC2626;}
+
+/* ── OVERVIEW CHARTS ─────────────────────────────────────────────── */
+.platform-dist{display:flex;gap:8px;flex-wrap:wrap;}
+.platform-pill{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav id="sidebar">
+  <div class="sidebar-logo">
+    <div class="company">Sierra Digital</div>
+    <div class="app-name">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      Migration Assistant <span class="badge">BETA</span>
+    </div>
+  </div>
+  <div class="nav-section">
+    <div class="nav-item active" onclick="showPage('overview')" id="nav-overview">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Overview
+    </div>
+    <div class="nav-item" onclick="showPage('assets')" id="nav-assets">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg>
+      Assets
+    </div>
+    <div class="nav-item" onclick="showPage('runs')" id="nav-runs">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Runs
+    </div>
+    <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      Settings
+    </div>
+  </div>
+  <div class="sidebar-bottom">
+    <div class="sidebar-bottom-btn">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+      Support
+    </div>
+    <div class="sidebar-bottom-btn">
+      <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.82a19.79 19.79 0 01-3.07-8.68A2 2 0 012 1h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.91 8.91A16 16 0 0015.09 17l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
+      Help Center
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div id="main">
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="breadcrumb" id="breadcrumb">
+      <span class="current">Overview</span>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" title="Search">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <button class="icon-btn" title="Notifications">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+      </button>
+      <button class="icon-btn" title="Settings" onclick="showPage('settings')">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+      </button>
+      <div class="avatar" title="Sriman Parisuchitha">SP</div>
+    </div>
+  </div>
+
+  <!-- PAGES -->
+  <div class="page-content">
+
+    <!-- ═══ OVERVIEW PAGE ════════════════════════════════════════════ -->
+    <div class="page active" id="page-overview">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Overview</div>
+          <div class="page-subtitle">Migration Assessment Dashboard — Sierra Digital</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="loadAllData()">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Refresh
+          </button>
+          <button class="btn btn-primary" onclick="showCreateProjectModal()">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Project
+          </button>
+        </div>
+      </div>
+
+      <div class="stat-grid" id="overview-stats">
+        <div class="stat-card"><div class="stat-icon si-blue"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div><div class="label">Total Projects</div><div class="value" id="stat-projects">—</div><div class="sub">Active migration engagements</div></div>
+        <div class="stat-card"><div class="stat-icon si-orange"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg></div><div class="label">Total Artifacts</div><div class="value" id="stat-artifacts">—</div><div class="sub">Integration processes discovered</div></div>
+        <div class="stat-card"><div class="stat-icon si-green"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg></div><div class="label">Migration Ready</div><div class="value" id="stat-ready">—</div><div class="sub">Auto or partial readiness</div></div>
+        <div class="stat-card"><div class="stat-icon si-purple"><svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="label">Converted</div><div class="value" id="stat-converted">—</div><div class="sub">iFlows deployed to SAP IS</div></div>
+      </div>
+
+      <div class="card" style="padding:20px 24px;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div style="font-size:15px;font-weight:700;">Migration Projects</div>
+          <button class="btn btn-sm btn-primary" onclick="showCreateProjectModal()">+ New Project</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Project Name</th><th>Customer</th><th>Platform</th><th>Artifacts</th><th>Effort (days)</th><th>Status</th><th>Last Updated</th><th>Actions</th>
+            </tr></thead>
+            <tbody id="overview-table">
+              <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">Loading projects...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="padding:20px 24px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px;">Platform Distribution</div>
+        <div id="platform-dist" class="platform-dist"></div>
+      </div>
+    </div>
+
+    <!-- ═══ ASSETS PAGE ══════════════════════════════════════════════ -->
+    <div class="page" id="page-assets">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Assets</div>
+          <div class="page-subtitle">Manage integration source connections and discovered artifacts</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select class="form-control" id="assets-project-sel" onchange="onProjectChange()" style="min-width:200px;">
+            <option value="">Select Project...</option>
+          </select>
+          <button class="btn btn-primary" onclick="showConnectModal()">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Connect Source
+          </button>
+        </div>
+      </div>
+
+      <div class="source-grid" id="source-cards">
+        <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-muted);">Select a project to view connected sources</div>
+      </div>
+
+      <div class="card" style="padding:20px 24px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px;">Previously Connected Sources</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Type</th><th>Source Name</th><th>Platform</th><th>Artifacts Found</th><th>Status</th><th>Last Synced</th><th>Actions</th></tr></thead>
+            <tbody id="sources-table">
+              <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-muted);">No sources connected yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ ARTIFACT LIST PAGE ═══════════════════════════════════════ -->
+    <div class="page" id="page-artifact-list">
+      <div class="page-header">
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+            <span class="back-btn" onclick="goBackToAssets()" style="display:flex;align-items:center;gap:4px;cursor:pointer;color:var(--text-secondary);font-size:13px;">
+              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+              Back
+            </span>
+            <div class="page-title" id="artifact-list-title">Artifacts</div>
+          </div>
+          <div class="page-subtitle" id="artifact-list-sub">All integration processes</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="runReanalysis()">Re-analyze All</button>
+          <button class="btn btn-primary btn-sm" onclick="downloadReport()">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Download Report
+          </button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <span class="filter-label">Filter:</span>
+        <select id="filter-status" onchange="applyFilters()">
+          <option value="">All Status</option>
+          <option value="discovered">Discovered</option>
+          <option value="assessed">Assessed</option>
+          <option value="converted">Converted</option>
+          <option value="qa_passed">QA Passed</option>
+          <option value="deployed">Deployed</option>
+          <option value="validated">Validated</option>
+        </select>
+        <select id="filter-complexity" onchange="applyFilters()">
+          <option value="">All Complexity</option>
+          <option value="Simple">Simple</option>
+          <option value="Medium">Medium</option>
+          <option value="Complex">Complex</option>
+        </select>
+        <select id="filter-domain" onchange="applyFilters()">
+          <option value="">All Domains</option>
+          <option value="CRM">CRM</option>
+          <option value="FIN">Finance</option>
+          <option value="HR">HR</option>
+          <option value="SCM">SCM</option>
+          <option value="EXT">External</option>
+          <option value="INT">Internal</option>
+        </select>
+        <select id="filter-readiness" onchange="applyFilters()">
+          <option value="">All Readiness</option>
+          <option value="Auto">Auto</option>
+          <option value="Partial">Partial</option>
+          <option value="Manual">Manual</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Reset</button>
+      </div>
+
+      <!-- Stats row -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px;" id="artifact-stats-row"></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th><input type="checkbox" id="select-all-chk" onchange="toggleSelectAll(this)"></th>
+            <th>Asset Name</th><th>Type</th><th>Trigger</th><th>Readiness</th><th>Complexity</th><th>Score</th><th>Effort</th><th>Status</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="artifact-table">
+            <tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted);">Loading artifacts...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ═══ ARTIFACT DETAIL PAGE ════════════════════════════════════ -->
+    <div class="page" id="page-artifact-detail">
+      <div class="detail-header">
+        <div class="back-btn" onclick="goBackToArtifactList()">
+          <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+          Back to Artifacts
+        </div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <h2 id="detail-name">—</h2>
+            <div class="detail-meta" id="detail-meta">
+              <span class="meta-item"><strong>Readiness:</strong> <span id="detail-readiness">—</span></span>
+              <span class="meta-item">|</span>
+              <span class="meta-item"><strong>Complexity:</strong> <span id="detail-complexity">—</span></span>
+              <span class="meta-item">|</span>
+              <span class="meta-item"><strong>Score:</strong> <span id="detail-score">—</span></span>
+              <span class="meta-item">|</span>
+              <span class="meta-item"><strong>Effort:</strong> <span id="detail-effort">—</span> days</span>
+            </div>
+          </div>
+          <div class="action-btns">
+            <button class="btn btn-primary" id="btn-run-conversion" onclick="runConversion()">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Conversion
+            </button>
+            <button class="btn btn-secondary" id="btn-qa" onclick="runQACheck()">QA Check</button>
+            <button class="btn btn-success btn-sm" id="btn-deploy" onclick="deployArtifact()">Deploy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab-item active" onclick="switchTab('source')">Source</div>
+        <div class="tab-item" onclick="switchTab('assessment')">Assessment</div>
+        <div class="tab-item" onclick="switchTab('convert')">Convert</div>
+        <div class="tab-item" onclick="switchTab('qa')">QA Check</div>
+        <div class="tab-item" onclick="switchTab('deploy')">Deploy</div>
+        <div class="tab-item" onclick="switchTab('validate')">Validate</div>
+      </div>
+
+      <!-- Source Tab -->
+      <div class="tab-content active" id="tab-source">
+        <div class="card" style="padding:20px 24px;margin-bottom:16px;">
+          <div style="font-size:14px;font-weight:700;margin-bottom:16px;">Process Details</div>
+          <div class="table-wrap">
+            <table><thead><tr><th><input type="checkbox"></th><th>Process Name</th><th>Type</th><th>Component ID</th><th>Domain</th><th>Trigger</th><th>Shapes</th><th>Connectors</th></tr></thead>
+            <tbody id="source-process-table"></tbody></table>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-primary" onclick="runAssessment()">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+            Run Assessment
+          </button>
+        </div>
+      </div>
+
+      <!-- Assessment Tab -->
+      <div class="tab-content" id="tab-assessment">
+        <div id="assessment-loading" style="text-align:center;padding:60px;color:var(--text-muted);display:none;">
+          <svg class="spin" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <p style="margin-top:12px;">Running assessment analysis...</p>
+        </div>
+        <div id="assessment-content" style="display:none;">
+          <div class="assessment-split">
+            <div class="assessment-pane">
+              <h3>Assessment Findings</h3>
+              <div class="word-count" id="findings-count">0 findings</div>
+              <div id="findings-content"></div>
+            </div>
+            <div class="assessment-pane">
+              <h3>Recommendations</h3>
+              <div class="word-count" id="recs-count">0 recommendations</div>
+              <div id="recs-content"></div>
+            </div>
+          </div>
+          <div style="margin-top:16px;" id="assessment-meta-info"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;">
+            <div id="challenges-section"></div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary" onclick="downloadAssessmentReport()">
+                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Download Assessment
+              </button>
+              <button class="btn btn-primary" onclick="switchTab('convert');runConversion()">Convert →</button>
+            </div>
+          </div>
+        </div>
+        <div id="assessment-empty" style="text-align:center;padding:60px;color:var(--text-muted);">
+          <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+          <h3 style="margin-top:12px;">No Assessment Yet</h3>
+          <p>Click "Run Assessment" in the Source tab to generate findings and recommendations.</p>
+          <button class="btn btn-primary" style="margin-top:16px;" onclick="switchTab('source')">Go to Source Tab</button>
+        </div>
+      </div>
+
+      <!-- Convert Tab -->
+      <div class="tab-content" id="tab-convert">
+        <div class="card" style="padding:24px;margin-bottom:16px;">
+          <div style="font-size:14px;font-weight:700;margin-bottom:16px;">Conversion Process</div>
+          <div id="convert-output-area">
+            <div style="text-align:center;padding:40px;color:var(--text-muted);">
+              Click "Run Conversion" to begin the iFlow conversion process.
+            </div>
+          </div>
+          <div id="convert-progress" style="display:none;margin-top:12px;">
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Converting...</div>
+            <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-secondary" onclick="switchTab('source')">Cancel</button>
+          <button class="btn btn-primary" onclick="switchTab('qa');runQACheck()">QA Check →</button>
+        </div>
+      </div>
+
+      <!-- QA Tab -->
+      <div class="tab-content" id="tab-qa">
+        <div id="qa-content">
+          <div style="text-align:center;padding:40px;color:var(--text-muted);">Run QA Check to validate the converted iFlow.</div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button class="btn btn-secondary" onclick="switchTab('convert')">Cancel</button>
+          <button class="btn btn-primary" onclick="switchTab('deploy');deployArtifact()">Deploy →</button>
+        </div>
+      </div>
+
+      <!-- Deploy Tab -->
+      <div class="tab-content" id="tab-deploy">
+        <div id="deploy-content">
+          <div style="text-align:center;padding:40px;color:var(--text-muted);">Deploy to SAP Integration Suite tenant.</div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button class="btn btn-secondary" onclick="switchTab('qa')">Cancel</button>
+          <button class="btn btn-primary" onclick="switchTab('validate');validateArtifact()">Validate →</button>
+        </div>
+      </div>
+
+      <!-- Validate Tab -->
+      <div class="tab-content" id="tab-validate">
+        <div id="validate-content">
+          <div style="text-align:center;padding:40px;color:var(--text-muted);">Run validation after deployment.</div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button class="btn btn-secondary" onclick="switchTab('deploy')">Cancel</button>
+          <button class="btn btn-success" onclick="markComplete()">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Mark Complete
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /artifact-detail -->
+
+    <!-- ═══ RUNS PAGE ════════════════════════════════════════════════ -->
+    <div class="page" id="page-runs">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Conversion Runs</div>
+          <div class="page-subtitle">History of all iFlow conversion and deployment runs</div>
+        </div>
+      </div>
+      <div class="card" style="padding:20px 24px;">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Artifact Name</th><th>Project</th><th>Run #</th><th>Status</th><th>Started</th><th>Actions</th></tr></thead>
+            <tbody id="runs-table">
+              <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">No conversion runs yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SETTINGS PAGE ════════════════════════════════════════════ -->
+    <div class="page" id="page-settings">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Settings</div>
+          <div class="page-subtitle">Platform connections and application preferences</div>
+        </div>
+        <button class="btn btn-primary" onclick="showCreateProjectModal()">New Project</button>
+      </div>
+
+      <div class="card" style="padding:20px 24px;margin-bottom:20px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:16px;">Projects</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Customer</th><th>Platform</th><th>Consultant</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="settings-projects-table"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="padding:20px 24px;margin-bottom:20px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Platform API Connections</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">Configure API credentials for direct platform sync</div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;" id="platform-connections">
+          <div class="card" style="padding:16px;border:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+              <div style="width:36px;height:36px;background:#FFF3E0;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">⚡</div>
+              <div><div style="font-weight:700;">Boomi AtomSphere</div><div style="font-size:11px;color:var(--text-secondary);">API v1 — REST</div></div>
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">Connect to Boomi AtomSphere to sync integration processes directly</div>
+            <button class="btn btn-secondary btn-sm">Configure</button>
+          </div>
+          <div class="card" style="padding:16px;border:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+              <div style="width:36px;height:36px;background:#E8F5E9;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">🔗</div>
+              <div><div style="font-weight:700;">SAP PI/PO (PIPO)</div><div style="font-size:11px;color:var(--text-secondary);">XI Export / REST API</div></div>
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">Connect to SAP PI/PO Integration Repository for scenario export</div>
+            <button class="btn btn-secondary btn-sm">Configure</button>
+          </div>
+          <div class="card" style="padding:16px;border:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+              <div style="width:36px;height:36px;background:#FCE4EC;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">🔥</div>
+              <div><div style="font-weight:700;">TIBCO BusinessWorks</div><div style="font-size:11px;color:var(--text-secondary);">Project ZIP Export</div></div>
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">Upload TIBCO BW project ZIP to analyze processes and activities</div>
+            <button class="btn btn-secondary btn-sm">Configure</button>
+          </div>
+          <div class="card" style="padding:16px;border:1px solid var(--border);">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+              <div style="width:36px;height:36px;background:#E3F2FD;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">🌊</div>
+              <div><div style="font-weight:700;">MuleSoft Anypoint</div><div style="font-size:11px;color:var(--text-secondary);">Mule Config Export</div></div>
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-bottom:10px;">Upload MuleSoft mule-config XML or ZIP to parse flows and mappings</div>
+            <button class="btn btn-secondary btn-sm">Configure</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:20px 24px;">
+        <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Seed Sample Data</div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">Load 4 sample projects with 90+ artifacts for demonstration</div>
+        <button class="btn btn-warning" onclick="runSeed()">
+          <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 8v4m0 4h.01"/></svg>
+          Load Sample Data
+        </button>
+      </div>
+    </div>
+
+  </div><!-- /page-content -->
+</div><!-- /main -->
+
+<!-- ═══ CONNECT SOURCE MODAL ═════════════════════════════════════════ -->
+<div id="connect-modal" class="modal-backdrop" style="display:none;" onclick="closeConnectModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title">Connect Source</div>
+      <button class="modal-close" onclick="closeConnectModal()">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding:0;">
+      <div class="connect-halves">
+        <!-- LEFT: File Upload -->
+        <div class="connect-half">
+          <div class="connect-half-title">Upload ZIP / XML</div>
+          <div class="connect-half-sub">Upload an exported project file from your integration platform</div>
+          <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+            <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="margin:0 auto;display:block;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            <p><strong>Click to upload</strong> or drag and drop</p>
+            <p class="supported">Supported: ZIP, XML (max 50MB)</p>
+          </div>
+          <input type="file" id="file-input" accept=".zip,.xml" onchange="handleFileSelect(event)"/>
+          <div id="file-selected" style="display:none;margin-top:12px;padding:10px;background:var(--main-bg);border-radius:6px;font-size:12px;"></div>
+          <div class="form-group" style="margin-top:16px;">
+            <label class="form-label">Source Name</label>
+            <input type="text" class="form-control" id="upload-name" placeholder="e.g. Boomi Production Export"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Platform</label>
+            <select class="form-control" id="upload-platform">
+              <option value="boomi">Boomi</option>
+              <option value="pipo">SAP PI/PO (PIPO)</option>
+              <option value="tibco">TIBCO BusinessWorks</option>
+              <option value="mulesoft">MuleSoft</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" style="width:100%;" onclick="submitUpload()">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+            Upload & Parse
+          </button>
+        </div>
+        <!-- RIGHT: API Connection -->
+        <div class="connect-half">
+          <div class="connect-half-title">API Connection</div>
+          <div class="connect-half-sub">Connect directly to your integration platform API</div>
+          <div class="form-group">
+            <label class="form-label">Platform</label>
+            <select class="form-control" id="api-platform" onchange="updateAPIFields()">
+              <option value="boomi">Boomi AtomSphere</option>
+              <option value="pipo">SAP PI/PO</option>
+              <option value="mulesoft">MuleSoft Anypoint</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Account ID / Environment</label>
+            <input type="text" class="form-control" id="api-account" placeholder="e.g. globaltech-prod or PI-PRD"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Username / Client ID</label>
+            <input type="text" class="form-control" id="api-username" placeholder="api@globaltech.com"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password / Client Secret</label>
+            <input type="password" class="form-control" id="api-password" placeholder="••••••••"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Component Filter (optional)</label>
+            <input type="text" class="form-control" id="api-filter" placeholder="Filter by folder or prefix"/>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-secondary" style="flex:1;" onclick="testAPIConnection()">Test Connection</button>
+            <button class="btn btn-primary" style="flex:1;" onclick="submitAPIConnection()">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              Sync
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CREATE PROJECT MODAL ═════════════════════════════════════════ -->
+<div id="project-modal" class="modal-backdrop" style="display:none;" onclick="closeProjectModal(event)">
+  <div class="modal" style="width:500px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="project-modal-title">New Migration Project</div>
+      <button class="modal-close" onclick="closeProjectModal()">
+        <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="project-edit-id"/>
+      <div class="input-row">
+        <div class="form-group">
+          <label class="form-label">Project Name *</label>
+          <input type="text" class="form-control" id="proj-name" placeholder="e.g. ACME Logistics Migration"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Customer *</label>
+          <input type="text" class="form-control" id="proj-customer" placeholder="Customer company name"/>
+        </div>
+      </div>
+      <div class="input-row">
+        <div class="form-group">
+          <label class="form-label">Platform *</label>
+          <select class="form-control" id="proj-platform">
+            <option value="boomi">Boomi AtomSphere</option>
+            <option value="pipo">SAP PI/PO (PIPO)</option>
+            <option value="tibco">TIBCO BusinessWorks</option>
+            <option value="mulesoft">MuleSoft Anypoint</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Consultant</label>
+          <input type="text" class="form-control" id="proj-consultant" placeholder="Consultant name"/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Description</label>
+        <textarea class="form-control" id="proj-desc" rows="3" placeholder="Brief description of the migration scope..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeProjectModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProject()">Save Project</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TOAST CONTAINER ══════════════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<script>
+// ── STATE ───────────────────────────────────────────────────────────────────
+const state = {
+  projects: [],
+  currentProjectId: null,
+  currentSourceId: null,
+  currentArtifactId: null,
+  artifacts: [],
+  sources: [],
+  currentArtifact: null,
+  currentAssessment: null,
+  currentPage: 'overview',
+  filters: { status: '', complexity: '', domain: '', readiness: '' },
+  selectedFile: null
+};
+
+const API = '';
+
+// ── NAVIGATION ──────────────────────────────────────────────────────────────
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  const el = document.getElementById('page-' + page);
+  if (el) el.classList.add('active');
+  const nav = document.getElementById('nav-' + page);
+  if (nav) nav.classList.add('active');
+
+  state.currentPage = page;
+  updateBreadcrumb([page.charAt(0).toUpperCase() + page.slice(1)]);
+
+  if (page === 'overview') loadAllData();
+  if (page === 'assets') { loadProjectsForSelect(); if (state.currentProjectId) loadSources(state.currentProjectId); }
+  if (page === 'settings') { loadSettingsProjects(); }
+  if (page === 'runs') loadRuns();
+}
+
+function updateBreadcrumb(parts) {
+  const bc = document.getElementById('breadcrumb');
+  if (parts.length === 1) {
+    bc.innerHTML = `<span class="current">${parts[0]}</span>`;
+  } else {
+    bc.innerHTML = parts.map((p, i) =>
+      i < parts.length - 1
+        ? `<span class="crumb">${p}</span><span class="sep">/</span>`
+        : `<span class="current">${p}</span>`
+    ).join('');
+  }
+}
+
+function goBackToAssets() {
+  showPage('assets');
+  document.getElementById('nav-assets').classList.add('active');
+  document.getElementById('nav-overview').classList.remove('active');
+}
+
+function goBackToArtifactList() {
+  showPage('artifact-list');
+}
+
+// ── DATA LOADING ────────────────────────────────────────────────────────────
+async function loadAllData() {
+  try {
+    const projects = await api('/api/projects');
+    state.projects = projects;
+
+    const total = projects.length;
+    let totalArtifacts = 0, totalConverted = 0, totalReady = 0;
+    projects.forEach(p => {
+      totalArtifacts += parseInt(p.artifact_count) || 0;
+      totalConverted += parseInt(p.converted_count) || 0;
+      totalReady += parseInt(p.auto_count) || 0;
+    });
+
+    document.getElementById('stat-projects').textContent = total;
+    document.getElementById('stat-artifacts').textContent = totalArtifacts;
+    document.getElementById('stat-ready').textContent = totalReady;
+    document.getElementById('stat-converted').textContent = totalConverted;
+
+    renderOverviewTable(projects);
+    renderPlatformDist(projects);
+  } catch (err) {
+    toast('Failed to load data: ' + err.message, 'error');
+  }
+}
+
+function renderOverviewTable(projects) {
+  const tbody = document.getElementById('overview-table');
+  if (!projects.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">No projects yet. <a href="#" onclick="showCreateProjectModal();return false;">Create one</a> or <a href="#" onclick="runSeed();return false;">load sample data</a>.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = projects.map(p => `
+    <tr class="clickable-row" onclick="openProject(${p.id})">
+      <td><strong>${esc(p.name)}</strong></td>
+      <td>${esc(p.customer)}</td>
+      <td><span class="badge platform-${p.platform}">${platformLabel(p.platform)}</span></td>
+      <td>${p.artifact_count || 0}</td>
+      <td>${p.artifact_count > 0 ? '~' + Math.round((p.artifact_count || 0) * 5) : '—'}</td>
+      <td><span class="badge ${p.status === 'active' ? 'badge-green' : p.status === 'completed' ? 'badge-blue' : 'badge-gray'}">${p.status}</span></td>
+      <td>${formatDate(p.updated_at)}</td>
+      <td onclick="event.stopPropagation()">
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm btn-secondary" onclick="openProject(${p.id})">Open</button>
+          <button class="btn btn-sm btn-secondary" onclick="editProject(${p.id})">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteProject(${p.id})">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function renderPlatformDist(projects) {
+  const counts = {};
+  projects.forEach(p => counts[p.platform] = (counts[p.platform] || 0) + 1);
+  const el = document.getElementById('platform-dist');
+  el.innerHTML = Object.entries(counts).map(([pl, cnt]) => `
+    <div class="platform-pill platform-${pl}">
+      <span>${platformLabel(pl)}</span>
+      <span style="font-weight:700;">${cnt} project${cnt > 1 ? 's' : ''}</span>
+    </div>
+  `).join('') || '<span style="color:var(--text-muted);">No data yet</span>';
+}
+
+// ── PROJECTS ────────────────────────────────────────────────────────────────
+function openProject(id) {
+  state.currentProjectId = id;
+  const proj = state.projects.find(p => p.id === id);
+  showPage('assets');
+  document.getElementById('assets-project-sel').value = id;
+  document.getElementById('nav-assets').classList.add('active');
+  document.getElementById('nav-overview').classList.remove('active');
+  onProjectChange();
+}
+
+async function loadProjectsForSelect() {
+  try {
+    if (!state.projects.length) state.projects = await api('/api/projects');
+    const sel = document.getElementById('assets-project-sel');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Select Project...</option>' +
+      state.projects.map(p => `<option value="${p.id}" ${p.id == state.currentProjectId ? 'selected' : ''}>${esc(p.name)} (${platformLabel(p.platform)})</option>`).join('');
+    if (state.currentProjectId) sel.value = state.currentProjectId;
+  } catch (err) { console.error(err); }
+}
+
+async function onProjectChange() {
+  const sel = document.getElementById('assets-project-sel');
+  state.currentProjectId = sel.value ? parseInt(sel.value) : null;
+  if (state.currentProjectId) {
+    await loadSources(state.currentProjectId);
+  }
+}
+
+// ── SOURCES ─────────────────────────────────────────────────────────────────
+async function loadSources(projectId) {
+  try {
+    const sources = await api(`/api/sources/project/${projectId}`);
+    state.sources = sources;
+    renderSourceCards(sources);
+    renderSourcesTable(sources);
+  } catch (err) {
+    toast('Failed to load sources: ' + err.message, 'error');
+  }
+}
+
+function renderSourceCards(sources) {
+  const el = document.getElementById('source-cards');
+  if (!sources.length) {
+    el.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-muted);">
+      <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="margin:0 auto;display:block;margin-bottom:12px;"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg>
+      <h3>No Sources Connected</h3>
+      <p>Click "Connect Source" to upload a project file or connect via API</p>
+    </div>`;
+    return;
+  }
+  el.innerHTML = sources.map(s => {
+    const icon = platformIcon(s.platform);
+    return `
+    <div class="source-card" onclick="openSourceArtifacts(${s.id}, '${esc(s.name)}', '${s.platform}')">
+      <div class="platform-icon" style="background:${platformBg(s.platform)}">${icon}</div>
+      <h4>${esc(s.name)}</h4>
+      <div class="platform-type"><span class="badge platform-${s.platform}">${platformLabel(s.platform)}</span> <span class="badge badge-gray">${s.type.toUpperCase()}</span></div>
+      <div class="source-metrics">
+        <div class="source-metric"><div class="m-val">${s.artifacts_found || 0}</div><div class="m-lbl">Discovered</div></div>
+        <div class="source-metric"><div class="m-val">—</div><div class="m-lbl">Ready</div></div>
+        <div class="source-metric"><div class="m-val">0</div><div class="m-lbl">Converted</div></div>
+        <div class="source-metric"><div class="m-val">0</div><div class="m-lbl">Needs Attn</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderSourcesTable(sources) {
+  const tbody = document.getElementById('sources-table');
+  if (!sources.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-muted);">No sources connected yet</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = sources.map(s => `
+    <tr>
+      <td><span class="badge badge-gray">${s.type.toUpperCase()}</span></td>
+      <td><strong class="clickable-row" onclick="openSourceArtifacts(${s.id},'${esc(s.name)}','${s.platform}')">${esc(s.name)}</strong></td>
+      <td><span class="badge platform-${s.platform}">${platformLabel(s.platform)}</span></td>
+      <td>${s.artifacts_found || 0}</td>
+      <td><span class="badge ${s.status === 'synced' ? 'badge-green' : s.status === 'failed' ? 'badge-red' : 'badge-yellow'}">${s.status}</span></td>
+      <td>${s.last_synced_at ? formatDate(s.last_synced_at) : '—'}</td>
+      <td>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm btn-secondary" onclick="syncSource(${s.id})">↻ Sync</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteSource(${s.id})">✕</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openSourceArtifacts(sourceId, sourceName, platform) {
+  state.currentSourceId = sourceId;
+  showPage('artifact-list');
+  document.getElementById('artifact-list-title').textContent = esc(sourceName || 'Artifacts');
+  document.getElementById('artifact-list-sub').textContent = `${platformLabel(platform)} — All integration processes`;
+  document.getElementById('nav-assets').classList.add('active');
+  updateBreadcrumb(['Assets', sourceName || 'Artifacts']);
+  await loadArtifacts(state.currentProjectId, sourceId);
+}
+
+// ── ARTIFACTS ───────────────────────────────────────────────────────────────
+async function loadArtifacts(projectId, sourceId) {
+  if (!projectId) return;
+  try {
+    const params = new URLSearchParams({ ...state.filters });
+    if (sourceId) params.set('source_id', sourceId);
+    const artifacts = await api(`/api/artifacts/project/${projectId}?${params}`);
+    state.artifacts = artifacts;
+    renderArtifactTable(artifacts);
+    await loadArtifactStats(projectId);
+  } catch (err) {
+    toast('Failed to load artifacts: ' + err.message, 'error');
+  }
+}
+
+async function loadArtifactStats(projectId) {
+  try {
+    const stats = await api(`/api/artifacts/project/${projectId}/stats`);
+    const el = document.getElementById('artifact-stats-row');
+    el.innerHTML = `
+      <div class="stat-card" style="padding:12px 16px;">
+        <div class="label" style="font-size:10px;">Total</div>
+        <div class="value" style="font-size:22px;">${stats.total}</div>
+      </div>
+      <div class="stat-card" style="padding:12px 16px;">
+        <div class="label" style="font-size:10px;color:#16A34A;">Simple</div>
+        <div class="value" style="font-size:22px;color:#16A34A;">${stats.simple_count}</div>
+      </div>
+      <div class="stat-card" style="padding:12px 16px;">
+        <div class="label" style="font-size:10px;color:#D97706;">Medium</div>
+        <div class="value" style="font-size:22px;color:#D97706;">${stats.medium_count}</div>
+      </div>
+      <div class="stat-card" style="padding:12px 16px;">
+        <div class="label" style="font-size:10px;color:#DC2626;">Complex</div>
+        <div class="value" style="font-size:22px;color:#DC2626;">${stats.complex_count}</div>
+      </div>
+      <div class="stat-card" style="padding:12px 16px;">
+        <div class="label" style="font-size:10px;">Effort Days</div>
+        <div class="value" style="font-size:22px;">${stats.total_effort_days}</div>
+      </div>
+    `;
+  } catch (err) { console.error(err); }
+}
+
+function renderArtifactTable(artifacts) {
+  const tbody = document.getElementById('artifact-table');
+  if (!artifacts.length) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted);">No artifacts found. Adjust filters or connect a source.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = artifacts.map(a => {
+    const cl = (a.complexity_level || 'Simple').toLowerCase();
+    const statusBadge = statusBadgeHtml(a.status);
+    return `
+    <tr class="clickable-row" onclick="openArtifactDetail(${a.id})">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="art-chk" value="${a.id}"></td>
+      <td><strong>${esc(a.name)}</strong><div style="font-size:11px;color:var(--text-secondary);">${esc(a.domain || '')} · ${esc(a.process_id || '')}</div></td>
+      <td><span class="badge badge-gray">${esc(a.artifact_type || 'Process')}</span></td>
+      <td>${esc(a.trigger_type || '—')}</td>
+      <td><span class="badge ${a.readiness === 'Auto' ? 'badge-green' : a.readiness === 'Manual' ? 'badge-red' : 'badge-yellow'}">${a.readiness || 'Partial'}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="dot dot-${cl === 'simple' ? 'green' : cl === 'medium' ? 'yellow' : 'red'}"></span>
+          <span class="complexity-${cl}">${a.complexity_level || '—'}</span>
+        </div>
+      </td>
+      <td>
+        <div class="score-bar">
+          <span style="font-size:12px;font-weight:600;min-width:28px;">${a.complexity_score || 0}</span>
+          <div class="score-track"><div class="score-fill ${cl}" style="width:${a.complexity_score || 0}%"></div></div>
+        </div>
+      </td>
+      <td>${a.effort_days || 0}d <span class="badge badge-gray" style="font-size:10px;">${a.tshirt_size || '?'}</span></td>
+      <td>${statusBadge}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-primary" onclick="openArtifactDetail(${a.id})">Open</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function applyFilters() {
+  state.filters = {
+    status: document.getElementById('filter-status').value,
+    complexity: document.getElementById('filter-complexity').value,
+    domain: document.getElementById('filter-domain').value,
+    readiness: document.getElementById('filter-readiness').value
+  };
+  loadArtifacts(state.currentProjectId, state.currentSourceId);
+}
+
+function clearFilters() {
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-complexity').value = '';
+  document.getElementById('filter-domain').value = '';
+  document.getElementById('filter-readiness').value = '';
+  state.filters = {};
+  loadArtifacts(state.currentProjectId, state.currentSourceId);
+}
+
+function toggleSelectAll(chk) {
+  document.querySelectorAll('.art-chk').forEach(c => c.checked = chk.checked);
+}
+
+// ── ARTIFACT DETAIL ─────────────────────────────────────────────────────────
+async function openArtifactDetail(artifactId) {
+  state.currentArtifactId = artifactId;
+  showPage('artifact-detail');
+  document.getElementById('nav-assets').classList.add('active');
+
+  try {
+    const data = await api(`/api/artifacts/${artifactId}`);
+    state.currentArtifact = data;
+    state.currentAssessment = data.assessment;
+
+    // Update header
+    document.getElementById('detail-name').textContent = data.name;
+    document.getElementById('detail-readiness').innerHTML = `<span class="badge ${data.readiness === 'Auto' ? 'badge-green' : data.readiness === 'Manual' ? 'badge-red' : 'badge-yellow'}">${data.readiness || 'Partial'}</span>`;
+    document.getElementById('detail-complexity').innerHTML = `<span class="complexity-${(data.complexity_level || 'Simple').toLowerCase()}">${data.complexity_level || '—'}</span>`;
+    document.getElementById('detail-score').textContent = data.complexity_score || 0;
+    document.getElementById('detail-effort').textContent = data.effort_days || 0;
+
+    updateBreadcrumb(['Assets', data.source_name || 'Source', data.name]);
+
+    // Source tab
+    document.getElementById('source-process-table').innerHTML = `
+      <tr>
+        <td><input type="checkbox" checked></td>
+        <td><strong>${esc(data.name)}</strong></td>
+        <td><span class="badge badge-gray">${esc(data.artifact_type || 'Process')}</span></td>
+        <td style="font-size:11px;color:var(--text-secondary);">${esc(data.process_id || '—')}</td>
+        <td>${esc(data.domain || '—')}</td>
+        <td>${esc(data.trigger_type || '—')}</td>
+        <td>${data.shapes_count || 0}</td>
+        <td>${data.connectors_count || 0}</td>
+      </tr>`;
+
+    // Switch to first tab
+    switchTab('source');
+
+    // If already has assessment, show it
+    if (data.assessment) {
+      renderAssessment(data.assessment);
+    }
+
+    // If has runs, show conversion output
+    if (data.runs && data.runs.length > 0) {
+      renderConversionOutput(data.runs[0]);
+      if (data.runs[0].qa_results && Object.keys(data.runs[0].qa_results).length) {
+        renderQAResults(data.runs[0].qa_results);
+      }
+      if (data.runs[0].deploy_results && Object.keys(data.runs[0].deploy_results).length) {
+        renderDeployResults(data.runs[0].deploy_results);
+      }
+      if (data.runs[0].validate_results && Object.keys(data.runs[0].validate_results).length) {
+        renderValidateResults(data.runs[0].validate_results);
+      }
+    }
+  } catch (err) {
+    toast('Failed to load artifact: ' + err.message, 'error');
+  }
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-item').forEach((t, i) => {
+    const names = ['source','assessment','convert','qa','deploy','validate'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  const tc = document.getElementById('tab-' + name);
+  if (tc) tc.classList.add('active');
+}
+
+// ── ASSESSMENT ──────────────────────────────────────────────────────────────
+async function runAssessment() {
+  if (!state.currentArtifactId) return;
+  switchTab('assessment');
+  document.getElementById('assessment-empty').style.display = 'none';
+  document.getElementById('assessment-content').style.display = 'none';
+  document.getElementById('assessment-loading').style.display = 'block';
+
+  try {
+    const result = await api(`/api/artifacts/${state.currentArtifactId}/assess`, 'POST');
+    state.currentAssessment = result;
+    document.getElementById('assessment-loading').style.display = 'none';
+    renderAssessment(result);
+    toast('Assessment complete!', 'success');
+  } catch (err) {
+    document.getElementById('assessment-loading').style.display = 'none';
+    document.getElementById('assessment-empty').style.display = 'block';
+    toast('Assessment failed: ' + err.message, 'error');
+  }
+}
+
+function renderAssessment(assessment) {
+  if (!assessment) return;
+  document.getElementById('assessment-empty').style.display = 'none';
+  document.getElementById('assessment-loading').style.display = 'none';
+  document.getElementById('assessment-content').style.display = 'block';
+
+  const findings = assessment.findings || [];
+  const recs = assessment.recommendations || [];
+
+  let totalFindings = 0;
+  const findingsHtml = findings.map(s => {
+    totalFindings += (s.items || []).length;
+    return `<div class="finding-section">
+      <div class="section-title">${esc(s.section)}</div>
+      <ul>${(s.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+
+  let totalRecs = 0;
+  const recsHtml = recs.map(s => {
+    totalRecs += (s.items || []).length;
+    return `<div class="finding-section">
+      <div class="section-title">${esc(s.section)}</div>
+      <ul>${(s.items || []).map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+
+  document.getElementById('findings-content').innerHTML = findingsHtml;
+  document.getElementById('recs-content').innerHTML = recsHtml;
+  document.getElementById('findings-count').textContent = `${totalFindings} findings across ${findings.length} sections`;
+  document.getElementById('recs-count').textContent = `${totalRecs} recommendations across ${recs.length} sections`;
+
+  const metaEl = document.getElementById('assessment-meta-info');
+  metaEl.innerHTML = `
+    <div style="background:var(--main-bg);border-radius:8px;padding:14px 16px;display:flex;gap:24px;flex-wrap:wrap;">
+      <div><span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;">iFlow Name</span><br><strong style="font-size:13px;">${esc(assessment.iflow_name || '—')}</strong></div>
+      <div><span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;">Package</span><br><strong style="font-size:13px;">${esc(assessment.iflow_package || '—')}</strong></div>
+      <div><span style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;">Approach</span><br><span style="font-size:13px;color:var(--text-secondary);">${esc(assessment.migration_approach || '—')}</span></div>
+    </div>`;
+
+  const challenges = assessment.identified_challenges || [];
+  if (challenges.length) {
+    document.getElementById('challenges-section').innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${challenges.map(c => `<span class="badge badge-yellow">⚠ ${esc(c)}</span>`).join('')}
+      </div>`;
+  }
+}
+
+function downloadAssessmentReport() {
+  if (!state.currentArtifact || !state.currentAssessment) {
+    toast('No assessment to download. Run assessment first.', 'warning');
+    return;
+  }
+  const a = state.currentArtifact;
+  const ass = state.currentAssessment;
+  let text = `INTEGRATION SUITE MIGRATION ASSESSMENT REPORT\nSierra Digital Consulting\n${'='.repeat(60)}\n\n`;
+  text += `Artifact: ${a.name}\nPlatform: ${(a.platform || '').toUpperCase()}\nComplexity: ${a.complexity_level} (${a.complexity_score}/100)\nT-Shirt: ${a.tshirt_size} | Effort: ${a.effort_days} days\nReadiness: ${a.readiness}\niFlow Target: ${ass.iflow_name || '—'}\nPackage: ${ass.iflow_package || '—'}\n\n`;
+  text += `FINDINGS\n${'─'.repeat(40)}\n`;
+  (ass.findings || []).forEach(s => {
+    text += `\n${s.section}:\n`;
+    (s.items || []).forEach(i => text += `  • ${i}\n`);
+  });
+  text += `\nRECOMMENDATIONS\n${'─'.repeat(40)}\n`;
+  (ass.recommendations || []).forEach(s => {
+    text += `\n${s.section}:\n`;
+    (s.items || []).forEach(i => text += `  • ${i}\n`);
+  });
+  if ((ass.identified_challenges || []).length) {
+    text += `\nIDENTIFIED CHALLENGES\n${'─'.repeat(40)}\n`;
+    (ass.identified_challenges || []).forEach(c => text += `  ⚠ ${c}\n`);
+  }
+  downloadText(text, `${a.name}_Assessment.txt`);
+  toast('Assessment report downloaded', 'success');
+}
+
+// ── CONVERSION ──────────────────────────────────────────────────────────────
+async function runConversion() {
+  if (!state.currentArtifactId) return;
+  switchTab('convert');
+  showConversionProgress();
+  try {
+    const result = await api(`/api/artifacts/${state.currentArtifactId}/convert`, 'POST');
+    renderConversionOutput(result);
+    toast('Conversion started! iFlow being generated...', 'success');
+  } catch (err) {
+    toast('Conversion failed: ' + err.message, 'error');
+  }
+}
+
+function showConversionProgress() {
+  const area = document.getElementById('convert-output-area');
+  area.innerHTML = `<div class="conversion-output"><span class="line-header">Initializing conversion engine...</span></div>`;
+  const prog = document.getElementById('convert-progress');
+  prog.style.display = 'block';
+  const bar = document.getElementById('progress-bar');
+  let w = 0;
+  const iv = setInterval(() => {
+    w = Math.min(90, w + Math.random() * 15);
+    bar.style.width = w + '%';
+    if (w >= 90) clearInterval(iv);
+  }, 300);
+}
+
+function renderConversionOutput(run) {
+  const area = document.getElementById('convert-output-area');
+  const text = run.convert_output || 'No conversion output available.';
+  const lines = text.split('\n').map(l => {
+    if (l.startsWith('===') || l.startsWith('[CONVERSION') || l.startsWith('[STEP')) return `<div class="line-step">${esc(l)}</div>`;
+    if (l.includes('✓')) return `<div class="line-success">${esc(l)}</div>`;
+    if (l.includes('⚠')) return `<div class="line-warning">${esc(l)}</div>`;
+    if (l.startsWith('[')) return `<div class="line-header">${esc(l)}</div>`;
+    return `<div>${esc(l)}</div>`;
+  }).join('');
+  area.innerHTML = `<div class="conversion-output">${lines}</div>`;
+  document.getElementById('convert-progress').style.display = 'none';
+  document.getElementById('progress-bar').style.width = '100%';
+}
+
+// ── QA CHECK ────────────────────────────────────────────────────────────────
+async function runQACheck() {
+  if (!state.currentArtifactId) return;
+  switchTab('qa');
+  document.getElementById('qa-content').innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-secondary);"><svg class="spin" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><p style="margin-top:12px;">Running QA validation...</p></div>`;
+  try {
+    const result = await api(`/api/artifacts/${state.currentArtifactId}/qa`, 'POST');
+    renderQAResults(result);
+    toast('QA Check complete!', 'success');
+  } catch (err) {
+    toast('QA Check failed: ' + err.message, 'error');
+  }
+}
+
+function renderQAResults(qa) {
+  const overall = qa.overall_status || 'passed';
+  let html = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:14px;background:${overall === 'passed' ? '#ECFDF5' : '#FFFBEB'};border-radius:8px;">
+    <span style="font-size:24px;">${overall === 'passed' ? '✅' : '⚠️'}</span>
+    <div>
+      <div style="font-weight:700;font-size:14px;">QA Process ${overall === 'passed' ? 'Passed' : 'Passed with Warnings'}</div>
+      <div style="font-size:12px;color:var(--text-secondary);">Artifact: ${esc(qa.artifact || '—')}</div>
+    </div>
+  </div>`;
+
+  const sectionOrder = ['structural_validation','process_integrity','mapping_validation','schema_validation','dependency_check'];
+  const sectionNames = { structural_validation: 'Structural Validation', process_integrity: 'Process Integrity', mapping_validation: 'Mapping Validation', schema_validation: 'Schema Validation', dependency_check: 'Dependency Check' };
+  const sections = qa.sections || {};
+
+  for (const key of sectionOrder) {
+    const sec = sections[key];
+    if (!sec) continue;
+    html += `<div class="qa-section">
+      <h4>${sectionNames[key] || key} <span class="badge ${sec.status === 'passed' ? 'badge-green' : 'badge-yellow'}" style="font-size:10px;">${sec.status}</span></h4>
+      ${(sec.checks || []).map(c => `
+        <div class="qa-check">
+          <span class="check-name">${esc(c.name)}</span>
+          <div>
+            <div class="qa-status ${c.status}">
+              ${c.status === 'pass' ? '✅ Pass' : c.status === 'warning' ? '⚠️ Warning' : '❌ Fail'}
+            </div>
+            ${c.message ? `<div class="qa-message">${esc(c.message)}</div>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+  }
+  document.getElementById('qa-content').innerHTML = html;
+}
+
+// ── DEPLOY ──────────────────────────────────────────────────────────────────
+async function deployArtifact() {
+  if (!state.currentArtifactId) return;
+  switchTab('deploy');
+  document.getElementById('deploy-content').innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-secondary);"><svg class="spin" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><p style="margin-top:12px;">Deploying to SAP Integration Suite...</p></div>`;
+  try {
+    const result = await api(`/api/artifacts/${state.currentArtifactId}/deploy`, 'POST');
+    renderDeployResults(result);
+    toast('Deployed successfully to CPI!', 'success');
+  } catch (err) {
+    toast('Deploy failed: ' + err.message, 'error');
+  }
+}
+
+function renderDeployResults(deploy) {
+  const dep = deploy.deployment || {};
+  const checks = deploy.validation_checks || [];
+  const exec = deploy.execution_readiness || {};
+  const html = `
+    <div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:14px;background:#ECFDF5;border-radius:8px;">
+        <span style="font-size:24px;">✅</span>
+        <div>
+          <div style="font-weight:700;">Deployment Successful</div>
+          <div style="font-size:12px;color:var(--text-secondary);">${esc(dep.tenant || 'CPI-Prod-Tenant01')} — ${esc(dep.runtime || 'SAP Integration Suite')}</div>
+        </div>
+      </div>
+      <div class="deploy-info">
+        <table>
+          <tr><td>Name</td><td><strong>${esc(dep.name || '—')}</strong></td></tr>
+          <tr><td>Type</td><td>${esc(dep.type || 'Integration Flow')}</td></tr>
+          <tr><td>Version</td><td>${esc(dep.version || '1.0.0')}</td></tr>
+          <tr><td>Tenant</td><td>${esc(dep.tenant || '—')}</td></tr>
+          <tr><td>Deployment Time</td><td>${dep.deployment_time ? formatDate(dep.deployment_time) : '—'}</td></tr>
+          <tr><td>Duration</td><td>${dep.duration_seconds || '—'}s</td></tr>
+          <tr><td>Status</td><td><span class="badge badge-green">✅ ${esc(dep.status || 'Success')}</span></td></tr>
+        </table>
+      </div>
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Validation Checks</div>
+      <div class="deploy-checks">
+        ${checks.map(c => `<div class="deploy-check"><span>${c.status === 'pass' ? '✅' : '⚠️'}</span> ${esc(c.name)}</div>`).join('')}
+      </div>
+    </div>
+    ${exec.endpoint ? `<div style="background:var(--main-bg);border-radius:8px;padding:12px 14px;margin-top:12px;">
+      <div style="font-size:11px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;margin-bottom:4px;">Endpoint</div>
+      <div style="font-size:12px;font-family:monospace;color:var(--accent);">${esc(exec.endpoint)}</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${esc(exec.message || '')}</div>
+    </div>` : ''}
+  `;
+  document.getElementById('deploy-content').innerHTML = html;
+}
+
+// ── VALIDATE ────────────────────────────────────────────────────────────────
+async function validateArtifact() {
+  if (!state.currentArtifactId) return;
+  switchTab('validate');
+  document.getElementById('validate-content').innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-secondary);"><svg class="spin" width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><p style="margin-top:12px;">Running validation checks...</p></div>`;
+  try {
+    const result = await api(`/api/artifacts/${state.currentArtifactId}/validate`, 'POST');
+    renderValidateResults(result);
+    toast('Validation complete!', 'success');
+  } catch (err) {
+    toast('Validation failed: ' + err.message, 'error');
+  }
+}
+
+function renderValidateResults(val) {
+  const fv = val.functional_validation || {};
+  const smv = val.schema_mapping_validation || {};
+  const ib = val.iflow_behavior || {};
+  const is_sum = val.integration_suite || {};
+
+  const html = `
+    <div style="background:#ECFDF5;border-radius:8px;padding:14px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:24px;">✅</span>
+      <div>
+        <div style="font-weight:700;">Validation Report — ${esc(val.overall_status || 'Validated')}</div>
+        <div style="font-size:12px;color:var(--text-secondary);">iFlow: ${esc(val.iflow || '—')} | Tenant: ${esc(val.tenant || '—')} | ${val.timestamp ? formatDate(val.timestamp) : ''}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div class="card" style="padding:16px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px;">Functional Validation</div>
+        ${renderValSection(fv)}
+      </div>
+      <div class="card" style="padding:16px;">
+        <div style="font-size:13px;font-weight:700;margin-bottom:12px;">Schema & Mapping Validation</div>
+        ${renderValSection(smv)}
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px;">Integration Flow Behavior</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        ${Object.entries(ib).map(([k, v]) => `
+          <div class="deploy-check">
+            <span>${(v.status||'pass') === 'pass' ? '✅' : '⚠️'}</span>
+            <div>
+              <div style="font-size:12px;font-weight:600;">${k.charAt(0).toUpperCase() + k.slice(1)}</div>
+              <div style="font-size:11px;color:var(--text-secondary);">${esc(v.message || '')}</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    ${is_sum.total_applications ? `<div class="card" style="padding:16px;">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px;">Integration Suite Summary</div>
+      <div style="display:flex;gap:24px;">
+        <div><div style="font-size:20px;font-weight:700;">${is_sum.total_applications}</div><div style="font-size:11px;color:var(--text-secondary);">Total Applications</div></div>
+        <div><div style="font-size:20px;font-weight:700;">${is_sum.migrated}</div><div style="font-size:11px;color:var(--text-secondary);">Migrated</div></div>
+        <div><div style="font-size:20px;font-weight:700;">${is_sum.deployed}</div><div style="font-size:11px;color:var(--text-secondary);">Deployed</div></div>
+        <div><span class="badge badge-green">${esc(is_sum.status || 'Active')}</span></div>
+      </div>
+    </div>` : ''}
+  `;
+  document.getElementById('validate-content').innerHTML = html;
+}
+
+function renderValSection(obj) {
+  return Object.entries(obj).map(([k, v]) => {
+    if (typeof v !== 'object') return '';
+    return `<div class="qa-check" style="margin-bottom:6px;">
+      <span class="check-name">${k.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</span>
+      <div>
+        <div class="qa-status ${v.status||'pass'}">${(v.status||'pass')==='pass'?'✅ Pass':'⚠️ Warning'}</div>
+        ${v.message ? `<div class="qa-message">${esc(v.message)}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function markComplete() {
+  toast('Artifact marked as complete and validated!', 'success');
+  goBackToArtifactList();
+}
+
+// ── CONNECT SOURCE MODAL ─────────────────────────────────────────────────────
+function showConnectModal() {
+  if (!state.currentProjectId) {
+    toast('Please select a project first', 'warning');
+    return;
+  }
+  document.getElementById('connect-modal').style.display = 'flex';
+}
+
+function closeConnectModal(event) {
+  if (!event || event.target === document.getElementById('connect-modal')) {
+    document.getElementById('connect-modal').style.display = 'none';
+    state.selectedFile = null;
+    document.getElementById('file-selected').style.display = 'none';
+    document.getElementById('file-input').value = '';
+  }
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) setSelectedFile(file);
+}
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) setSelectedFile(file);
+}
+
+function setSelectedFile(file) {
+  state.selectedFile = file;
+  const el = document.getElementById('file-selected');
+  el.style.display = 'block';
+  el.innerHTML = `📄 <strong>${esc(file.name)}</strong> (${(file.size / 1024).toFixed(1)} KB)`;
+  // Auto-set source name
+  if (!document.getElementById('upload-name').value) {
+    document.getElementById('upload-name').value = file.name.replace(/\.[^.]+$/, '');
+  }
+}
+
+async function submitUpload() {
+  if (!state.selectedFile) { toast('Please select a file first', 'warning'); return; }
+  if (!state.currentProjectId) { toast('Please select a project first', 'warning'); return; }
+
+  const formData = new FormData();
+  formData.append('artifact_file', state.selectedFile);
+  formData.append('project_id', state.currentProjectId);
+  formData.append('platform', document.getElementById('upload-platform').value);
+  formData.append('source_name', document.getElementById('upload-name').value || state.selectedFile.name);
+
+  try {
+    const res = await fetch(`${API}/api/sources/upload`, { method: 'POST', body: formData });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    closeConnectModal();
+    toast(`Uploaded! Found ${data.count} artifacts.`, 'success');
+    await loadSources(state.currentProjectId);
+  } catch (err) {
+    toast('Upload failed: ' + err.message, 'error');
+  }
+}
+
+async function testAPIConnection() {
+  toast('Testing connection... (demo mode)', 'warning');
+}
+
+async function submitAPIConnection() {
+  if (!state.currentProjectId) { toast('Please select a project first', 'warning'); return; }
+  const platform = document.getElementById('api-platform').value;
+  const accountId = document.getElementById('api-account').value;
+  const username = document.getElementById('api-username').value;
+  const password = document.getElementById('api-password').value;
+
+  try {
+    const source = await api('/api/sources', 'POST', {
+      project_id: state.currentProjectId,
+      type: 'api',
+      name: `${platformLabel(platform)} API — ${accountId || 'Connection'}`,
+      platform,
+      config: { accountId, username, password: password ? '****' : '', environment: 'Production' }
+    });
+
+    // Trigger sync
+    await api(`/api/sources/${source.id}/sync`, 'POST');
+    closeConnectModal();
+    toast('API connection created and sync initiated!', 'success');
+    await loadSources(state.currentProjectId);
+  } catch (err) {
+    toast('Connection failed: ' + err.message, 'error');
+  }
+}
+
+async function syncSource(id) {
+  toast('Syncing source...', 'warning');
+  try {
+    await api(`/api/sources/${id}/sync`, 'POST');
+    toast('Sync complete!', 'success');
+    await loadSources(state.currentProjectId);
+  } catch (err) {
+    toast('Sync failed: ' + err.message, 'error');
+  }
+}
+
+async function deleteSource(id) {
+  if (!confirm('Delete this source and all its artifacts?')) return;
+  try {
+    await api(`/api/sources/${id}`, 'DELETE');
+    toast('Source deleted', 'success');
+    await loadSources(state.currentProjectId);
+  } catch (err) {
+    toast('Delete failed: ' + err.message, 'error');
+  }
+}
+
+// ── CREATE PROJECT MODAL ─────────────────────────────────────────────────────
+function showCreateProjectModal() {
+  document.getElementById('project-edit-id').value = '';
+  document.getElementById('project-modal-title').textContent = 'New Migration Project';
+  document.getElementById('proj-name').value = '';
+  document.getElementById('proj-customer').value = '';
+  document.getElementById('proj-consultant').value = '';
+  document.getElementById('proj-platform').value = 'boomi';
+  document.getElementById('proj-desc').value = '';
+  document.getElementById('project-modal').style.display = 'flex';
+}
+
+function closeProjectModal(event) {
+  if (!event || event.target === document.getElementById('project-modal')) {
+    document.getElementById('project-modal').style.display = 'none';
+  }
+}
+
+async function editProject(id) {
+  try {
+    const p = await api(`/api/projects/${id}`);
+    document.getElementById('project-edit-id').value = p.id;
+    document.getElementById('project-modal-title').textContent = 'Edit Project';
+    document.getElementById('proj-name').value = p.name;
+    document.getElementById('proj-customer').value = p.customer;
+    document.getElementById('proj-consultant').value = p.consultant || '';
+    document.getElementById('proj-platform').value = p.platform;
+    document.getElementById('proj-desc').value = p.description || '';
+    document.getElementById('project-modal').style.display = 'flex';
+  } catch (err) {
+    toast('Failed to load project: ' + err.message, 'error');
+  }
+}
+
+async function saveProject() {
+  const id = document.getElementById('project-edit-id').value;
+  const name = document.getElementById('proj-name').value.trim();
+  const customer = document.getElementById('proj-customer').value.trim();
+  if (!name || !customer) { toast('Name and customer are required', 'warning'); return; }
+  const body = {
+    name, customer,
+    consultant: document.getElementById('proj-consultant').value.trim() || null,
+    platform: document.getElementById('proj-platform').value,
+    description: document.getElementById('proj-desc').value.trim() || null
+  };
+  try {
+    if (id) {
+      await api(`/api/projects/${id}`, 'PUT', body);
+      toast('Project updated', 'success');
+    } else {
+      await api('/api/projects', 'POST', body);
+      toast('Project created!', 'success');
+    }
+    closeProjectModal();
+    state.projects = [];
+    await loadAllData();
+    await loadProjectsForSelect();
+  } catch (err) {
+    toast('Save failed: ' + err.message, 'error');
+  }
+}
+
+async function deleteProject(id) {
+  if (!confirm('Delete this project and all its data?')) return;
+  try {
+    await api(`/api/projects/${id}`, 'DELETE');
+    toast('Project deleted', 'success');
+    state.projects = [];
+    await loadAllData();
+  } catch (err) {
+    toast('Delete failed: ' + err.message, 'error');
+  }
+}
+
+// ── ANALYSIS / REPORT ────────────────────────────────────────────────────────
+async function downloadReport() {
+  if (!state.currentProjectId) { toast('No project selected', 'warning'); return; }
+  try {
+    const data = await api(`/api/analysis/project/${state.currentProjectId}`);
+    const a = data.analysis;
+    const proj = data.project;
+    let text = `INTEGRATION SUITE MIGRATION ASSESSMENT REPORT\nSierra Digital Consulting\n${'='.repeat(70)}\n\n`;
+    text += `Project: ${proj.name}\nCustomer: ${proj.customer}\nPlatform: ${(proj.platform||'').toUpperCase()}\nConsultant: ${proj.consultant||'—'}\nDate: ${new Date().toLocaleDateString()}\n\n`;
+    text += `SUMMARY\n${'─'.repeat(50)}\n`;
+    text += `Total Processes: ${a.total_processes}\nSimple: ${a.simple_count} | Medium: ${a.medium_count} | Complex: ${a.complex_count}\nTotal Effort: ${a.total_effort_days} days\nEstimated Duration: ${a.migration_duration_months} months\n\n`;
+    text += `DOMAIN SUMMARY\n${'─'.repeat(50)}\n`;
+    (a.domain_summary||[]).forEach(d => text += `  ${d.domain}: ${d.count} processes, ${d.effort} days effort\n`);
+    text += `\nRISKS\n${'─'.repeat(50)}\n`;
+    (a.risks||[]).forEach(r => text += `  [${r.severity}] ${r.description}\n    Mitigation: ${r.mitigation}\n\n`);
+    text += `RECOMMENDATIONS\n${'─'.repeat(50)}\n`;
+    (a.recommendations||[]).forEach(r => text += `  ${r.priority}. [${r.area}] ${r.text}\n`);
+    text += `\nMIGRATION ROADMAP\n${'─'.repeat(50)}\n`;
+    (a.roadmap||[]).forEach(p => {
+      text += `\nPhase ${p.phase}: ${p.name} (${p.duration})\n`;
+      (p.activities||[]).forEach(act => text += `  • ${act}\n`);
+    });
+    downloadText(text, `${proj.name}_Migration_Report.txt`);
+    toast('Report downloaded!', 'success');
+  } catch (err) {
+    toast('Report generation failed: ' + err.message, 'error');
+  }
+}
+
+async function runReanalysis() {
+  if (!state.currentProjectId) return;
+  try {
+    const result = await api(`/api/analysis/project/${state.currentProjectId}/run`, 'POST');
+    toast(`Re-analyzed ${result.artifacts_reanalyzed} artifacts`, 'success');
+    await loadArtifacts(state.currentProjectId, state.currentSourceId);
+  } catch (err) {
+    toast('Re-analysis failed: ' + err.message, 'error');
+  }
+}
+
+// ── RUNS PAGE ────────────────────────────────────────────────────────────────
+async function loadRuns() {
+  try {
+    // Get all projects artifacts that have runs
+    if (!state.projects.length) state.projects = await api('/api/projects');
+    // Show empty state for now (runs would be loaded per-project)
+    const tbody = document.getElementById('runs-table');
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">Open an artifact and run conversion to see runs here.</td></tr>`;
+  } catch (err) { console.error(err); }
+}
+
+// ── SETTINGS ─────────────────────────────────────────────────────────────────
+async function loadSettingsProjects() {
+  try {
+    if (!state.projects.length) state.projects = await api('/api/projects');
+    const tbody = document.getElementById('settings-projects-table');
+    if (!state.projects.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted);">No projects. Load sample data or create a new project.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = state.projects.map(p => `
+      <tr>
+        <td><strong>${esc(p.name)}</strong></td>
+        <td>${esc(p.customer)}</td>
+        <td><span class="badge platform-${p.platform}">${platformLabel(p.platform)}</span></td>
+        <td>${esc(p.consultant || '—')}</td>
+        <td><span class="badge ${p.status === 'active' ? 'badge-green' : 'badge-gray'}">${p.status}</span></td>
+        <td>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-sm btn-secondary" onclick="editProject(${p.id})">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteProject(${p.id})">Delete</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (err) { console.error(err); }
+}
+
+async function runSeed() {
+  toast('Loading sample data...', 'warning');
+  try {
+    await api('/api/seed', 'POST');
+    state.projects = [];
+    await loadAllData();
+    await loadProjectsForSelect();
+    toast('Sample data loaded! 4 projects with 90 artifacts ready.', 'success');
+    if (state.currentPage === 'settings') loadSettingsProjects();
+  } catch (err) {
+    toast('Seed failed: ' + err.message, 'error');
+  }
+}
+
+// ── UTILITIES ────────────────────────────────────────────────────────────────
+async function api(url, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(API + url, opts);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' });
+}
+
+function platformLabel(p) {
+  const m = { boomi: 'Boomi', pipo: 'SAP PI/PO', tibco: 'TIBCO BW', mulesoft: 'MuleSoft' };
+  return m[p] || (p || '').toUpperCase();
+}
+
+function platformIcon(p) {
+  const m = { boomi: '⚡', pipo: '🔗', tibco: '🔥', mulesoft: '🌊' };
+  return m[p] || '⚙️';
+}
+
+function platformBg(p) {
+  const m = { boomi: '#FFF3E0', pipo: '#E8F5E9', tibco: '#FCE4EC', mulesoft: '#E3F2FD' };
+  return m[p] || '#F3F4F6';
+}
+
+function statusBadgeHtml(status) {
+  const map = {
+    discovered: 'badge-gray', assessed: 'badge-blue', converting: 'badge-yellow',
+    converted: 'badge-purple', qa_passed: 'badge-blue', deployed: 'badge-green', validated: 'badge-green'
+  };
+  return `<span class="badge ${map[status] || 'badge-gray'}">${status || 'discovered'}</span>`;
+}
+
+function toast(msg, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `
+    <span>${type === 'success' ? '✓' : type === 'error' ? '✕' : '⚠'}</span>
+    <span>${esc(msg)}</span>`;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+function downloadText(text, filename) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  loadAllData().catch(console.error);
+  loadProjectsForSelect().catch(console.error);
+});
+</script>
+</body>
+</html>

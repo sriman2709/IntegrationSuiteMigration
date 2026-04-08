@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xi:IntegrationRepository xmlns:xi="http://sap.com/xi/BASIS">
+  <xi:IntegrationScenario name="Customer_Master_Sync" namespace="urn:acme.com:customer">
+    <xi:OutboundInterface name="CustomerMaster_Out" type="RFC">
+      <xi:MappingProgram name="CustomerMaster_RFC_to_REST"/>
+      <xi:Operations count="1"/>
+    </xi:OutboundInterface>
+    <xi:InboundInterface name="CustomerMaster_In" type="REST">
+      <xi:Adapters>
+        <xi:Adapter type="RFC" direction="Sender"/>
+        <xi:Adapter type="HTTP" direction="Receiver"/>
+      </xi:Adapters>
+    </xi:InboundInterface>
+    <xi:InterfaceDetermination mappings="1" conditions="0" scripts="0"/>
+    <xi:Channel type="SAP_ABAP" direction="Sender"/>
+    <xi:Channel type="HTTP_REST" direction="Receiver"/>
+  </xi:IntegrationScenario>
+  <xi:IntegrationScenario name="Invoice_Outbound_EDI" namespace="urn:acme.com:finance">
+    <xi:OutboundInterface name="InvoiceIDOC_Out" type="IDoc">
+      <xi:MappingProgram name="INVOIC02_to_EDIFACT_INVOIC"/>
+      <xi:Operations count="2"/>
+    </xi:OutboundInterface>
+    <xi:InboundInterface name="InvoiceEDI_In" type="EDI_EDIFACT">
+      <xi:Adapters>
+        <xi:Adapter type="IDoc" direction="Sender"/>
+        <xi:Adapter type="AS2" direction="Receiver"/>
+      </xi:Adapters>
+    </xi:InboundInterface>
+    <xi:InterfaceDetermination mappings="2" conditions="1" scripts="1"/>
+    <xi:Channel type="SAP_ABAP" direction="Sender"/>
+    <xi:Channel type="AS2_EDIFACT" direction="Receiver"/>
+  </xi:IntegrationScenario>
+  <xi:IntegrationScenario name="HR_Employee_Replication" namespace="urn:acme.com:hr">
+    <xi:OutboundInterface name="HRMD_ABA_Out" type="IDoc">
+      <xi:MappingProgram name="HRMD_ABA_to_HRMD_A"/>
+      <xi:Operations count="1"/>
+    </xi:OutboundInterface>
+    <xi:InboundInterface name="HRMD_A_In" type="IDoc">
+      <xi:Adapters>
+        <xi:Adapter type="IDoc" direction="Sender"/>
+        <xi:Adapter type="IDoc" direction="Receiver"/>
+      </xi:Adapters>
+    </xi:InboundInterface>
+    <xi:InterfaceDetermination mappings="1" conditions="2" scripts="0"/>
+  </xi:IntegrationScenario>
+</xi:IntegrationRepository>

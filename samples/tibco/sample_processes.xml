@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bw:BusinessWorksProject xmlns:bw="http://www.tibco.com/bw/schema" version="6.8">
+  <pd:ProcessDef xmlns:pd="http://xmlns.tibco.com/bw/process/2014" name="OrderFulfillment_Process">
+    <pd:activity name="Start" type="bw.generalactivities.start"/>
+    <pd:activity name="Get_Order_From_DB" type="bw.jdbc.jdbcquery">
+      <pd:config><pd:connection>Oracle_ERP_DB</pd:connection></pd:config>
+    </pd:activity>
+    <pd:activity name="Transform_Order_Data" type="bw.xml.renderxmlfrominstance"/>
+    <pd:activity name="Map_to_SAP_Format" type="bw.generalactivities.mapper">
+      <pd:xpath mappings="45"/>
+    </pd:activity>
+    <pd:activity name="Post_to_SAP_ERP" type="bw.http.sendreceive">
+      <pd:config><pd:endpoint>SAP_ERP_REST</pd:endpoint></pd:config>
+    </pd:activity>
+    <pd:activity name="Log_Success" type="bw.generalactivities.log"/>
+    <pd:errorHandling type="CatchAll">
+      <pd:activity name="Error_Email" type="bw.smtp.sendmail"/>
+    </pd:errorHandling>
+    <pd:sharedModules>
+      <pd:module name="CommonErrorHandler"/>
+      <pd:module name="SAP_Connection_Pool"/>
+    </pd:sharedModules>
+    <pd:trigger type="HTTPReceiver"/>
+    <pd:activityCount>22</pd:activityCount>
+    <pd:domain>SCM</pd:domain>
+  </pd:ProcessDef>
+  <pd:ProcessDef xmlns:pd="http://xmlns.tibco.com/bw/process/2014" name="InventorySync_Batch">
+    <pd:activity name="Start" type="bw.generalactivities.start"/>
+    <pd:activity name="Read_Inventory_File" type="bw.file.read"/>
+    <pd:activity name="Parse_CSV" type="bw.generalactivities.mapper"/>
+    <pd:activity name="Loop_Records" type="bw.generalactivities.iterate"/>
+    <pd:activity name="Update_ERP" type="bw.http.sendreceive"/>
+    <pd:activity name="End" type="bw.generalactivities.end"/>
+    <pd:trigger type="Timer" schedule="0 2 * * *"/>
+    <pd:activityCount>15</pd:activityCount>
+    <pd:domain>SCM</pd:domain>
+  </pd:ProcessDef>
+  <pd:ProcessDef xmlns:pd="http://xmlns.tibco.com/bw/process/2014" name="CustomerNotification_Event">
+    <pd:activity name="Subscribe_JMS" type="bw.jms.receive"/>
+    <pd:activity name="Transform" type="bw.generalactivities.mapper"/>
+    <pd:activity name="Send_Email" type="bw.smtp.sendmail"/>
+    <pd:trigger type="JMS_Subscriber"/>
+    <pd:activityCount>8</pd:activityCount>
+    <pd:domain>CRM</pd:domain>
+  </pd:ProcessDef>
+</bw:BusinessWorksProject>
