@@ -4,7 +4,7 @@ const { pool } = require('../database/db');
 const AdmZip = require('adm-zip');
 const { getConnector } = require('../connectors');
 const { generateIFlowPackage, buildPackageName } = require('../engine/iflow');
-const { generatePDFReport } = require('../engine/pdf');
+const { generateHTMLReport } = require('../engine/pdf');
 
 // List all projects with artifact counts
 router.get('/', async (req, res) => {
@@ -102,8 +102,8 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// ── PDF Assessment Report ─────────────────────────────────────────────────────
-router.get('/:id/pdf', async (req, res) => {
+// ── HTML Assessment Report (opens in browser — use File > Print > Save as PDF) ──
+router.get('/:id/report', async (req, res) => {
   try {
     const { id } = req.params;
     const [projRes, artRes, statsRes] = await Promise.all([
@@ -125,22 +125,16 @@ router.get('/:id/pdf', async (req, res) => {
 
     if (!projRes.rows.length) return res.status(404).json({ error: 'Project not found' });
 
-    const project  = projRes.rows[0];
+    const project   = projRes.rows[0];
     const artifacts = artRes.rows;
-    const stats    = statsRes.rows[0];
+    const stats     = statsRes.rows[0];
 
-    const pdfBuffer = await generatePDFReport(project, artifacts, stats);
+    const html = generateHTMLReport(project, artifacts, stats);
 
-    const safeProj = (project.name || 'project').replace(/[^a-zA-Z0-9_\-]/g, '_');
-    const date     = new Date().toISOString().split('T')[0];
-    const filename = `${safeProj}_IS_Assessment_${date}.pdf`;
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', pdfBuffer.length);
-    res.send(pdfBuffer);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
   } catch (err) {
-    console.error('PDF generation error:', err);
+    console.error('Report generation error:', err);
     res.status(500).json({ error: err.message });
   }
 });

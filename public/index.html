@@ -1966,30 +1966,12 @@ async function downloadIFlowPackage() {
   }
 }
 
-async function downloadPDFReport() {
+function downloadPDFReport() {
   if (!state.currentProjectId) { toast('No project selected', 'warning'); return; }
-  const btn = document.getElementById('btn-pdf-report');
-  const origLabel = btn ? btn.innerHTML : '';
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<svg class="spin" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Generating PDF...`;
-  }
-  try {
-    const resp = await fetch(`/api/projects/${state.currentProjectId}/pdf`);
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({ error: resp.statusText }));
-      throw new Error(err.error || resp.statusText);
-    }
-    const blob = await resp.blob();
-    const filename = resp.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
-                     || `IS_Assessment_Report.pdf`;
-    triggerDownload(blob, filename);
-    toast('PDF Assessment Report downloaded', 'success');
-  } catch (err) {
-    toast('PDF generation failed: ' + err.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
-  }
+  // Opens a full-page HTML report in a new tab.
+  // In the report tab: click "Save as PDF / Print" or use File › Print › Save as PDF.
+  window.open(`/api/projects/${state.currentProjectId}/report`, '_blank');
+  toast('Assessment report opened — use the Print button or File › Print to save as PDF', 'success');
 }
 
 async function downloadAllIFlows() {
