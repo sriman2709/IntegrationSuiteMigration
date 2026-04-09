@@ -11,9 +11,16 @@ router.get('/', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT p.*,
-        COUNT(DISTINCT a.id) AS artifact_count,
-        COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'converted') AS converted_count,
-        COUNT(DISTINCT a.id) FILTER (WHERE a.readiness = 'Auto') AS auto_count
+        COUNT(DISTINCT a.id)                                                    AS artifact_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.status = 'converted')             AS converted_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.status IN ('deployed','validated')) AS deployed_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.readiness = 'Auto')               AS auto_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.readiness = 'Partial')            AS partial_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.readiness = 'Manual')             AS manual_count,
+        COALESCE(SUM(a.effort_days),0)                                         AS total_effort_days,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.complexity_level = 'Simple')      AS simple_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.complexity_level = 'Medium')      AS medium_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE a.complexity_level = 'Complex')     AS complex_count
       FROM projects p
       LEFT JOIN artifacts a ON a.project_id = p.id
       GROUP BY p.id

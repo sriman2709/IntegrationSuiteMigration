@@ -390,7 +390,7 @@ select.form-control{cursor:pointer;}
         <div class="table-wrap">
           <table>
             <thead><tr>
-              <th>Project Name</th><th>Customer</th><th>Platform</th><th>Artifacts</th><th>Effort (days)</th><th>Status</th><th>Last Updated</th><th>Actions</th>
+              <th>Project Name</th><th>Customer</th><th>Platform</th><th>Artifacts</th><th>Converted</th><th>Effort (days)</th><th>Complexity Mix</th><th>Status</th><th>Actions</th>
             </tr></thead>
             <tbody id="overview-table">
               <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">Loading projects...</td></tr>
@@ -1159,17 +1159,25 @@ async function loadAllData() {
     state.projects = projects;
 
     const total = projects.length;
-    let totalArtifacts = 0, totalConverted = 0, totalReady = 0;
+    let totalArtifacts = 0, totalConverted = 0, totalReady = 0, totalEffort = 0;
     projects.forEach(p => {
-      totalArtifacts += parseInt(p.artifact_count) || 0;
-      totalConverted += parseInt(p.converted_count) || 0;
-      totalReady += parseInt(p.auto_count) || 0;
+      totalArtifacts += parseInt(p.artifact_count)    || 0;
+      totalConverted += parseInt(p.converted_count)   || 0;
+      totalReady     += parseInt(p.auto_count)        || 0;
+      totalEffort    += parseInt(p.total_effort_days) || 0;
     });
 
-    document.getElementById('stat-projects').textContent = total;
+    document.getElementById('stat-projects').textContent  = total;
     document.getElementById('stat-artifacts').textContent = totalArtifacts;
-    document.getElementById('stat-ready').textContent = totalReady;
+    document.getElementById('stat-ready').textContent     = totalReady;
     document.getElementById('stat-converted').textContent = totalConverted;
+
+    // Sub-text: show effort and conversion % if data available
+    const convPct = totalArtifacts > 0 ? Math.round((totalConverted / totalArtifacts) * 100) : 0;
+    const subConverted = document.querySelector('#stat-converted')?.closest('.stat-card')?.querySelector('.sub');
+    if (subConverted) subConverted.textContent = totalConverted > 0 ? `${convPct}% of ${totalArtifacts} artifacts migrated` : 'iFlows deployed to SAP IS';
+    const subArtifacts = document.querySelector('#stat-artifacts')?.closest('.stat-card')?.querySelector('.sub');
+    if (subArtifacts) subArtifacts.textContent = totalEffort > 0 ? `~${totalEffort} effort days total` : 'Integration processes discovered';
 
     renderOverviewTable(projects);
     renderPlatformDist(projects);
@@ -1184,15 +1192,35 @@ function renderOverviewTable(projects) {
     tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-muted);">No projects yet. <a href="#" onclick="showCreateProjectModal();return false;">Create one</a> or <a href="#" onclick="runSeed();return false;">load sample data</a>.</td></tr>`;
     return;
   }
-  tbody.innerHTML = projects.map(p => `
+  tbody.innerHTML = projects.map(p => {
+    const total     = parseInt(p.artifact_count)   || 0;
+    const converted = parseInt(p.converted_count)  || 0;
+    const effort    = parseInt(p.total_effort_days) || 0;
+    const simple    = parseInt(p.simple_count)      || 0;
+    const medium    = parseInt(p.medium_count)      || 0;
+    const complex   = parseInt(p.complex_count)     || 0;
+    const convPct   = total > 0 ? Math.round((converted / total) * 100) : 0;
+    const complexMix = total > 0
+      ? `<span style="color:var(--success);font-size:11px;">${simple}S</span> <span style="color:#D97706;font-size:11px;">${medium}M</span> <span style="color:var(--danger);font-size:11px;">${complex}C</span>`
+      : '—';
+    return `
     <tr class="clickable-row" onclick="openProject(${p.id})">
-      <td><strong>${esc(p.name)}</strong></td>
-      <td>${esc(p.customer)}</td>
+      <td>
+        <strong>${esc(p.name)}</strong>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">${esc(p.consultant || '')}</div>
+      </td>
+      <td>${esc(p.customer || '—')}</td>
       <td><span class="badge platform-${p.platform}">${platformLabel(p.platform)}</span></td>
-      <td>${p.artifact_count || 0}</td>
-      <td>${p.artifact_count > 0 ? '~' + Math.round((p.artifact_count || 0) * 5) : '—'}</td>
+      <td><strong>${total}</strong></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <strong>${converted}</strong>
+          ${converted > 0 ? `<div style="background:var(--border);border-radius:4px;width:48px;height:6px;overflow:hidden;"><div style="background:var(--success);width:${convPct}%;height:100%;"></div></div><span style="font-size:10px;color:var(--text-secondary);">${convPct}%</span>` : '<span style="font-size:11px;color:var(--text-secondary);">—</span>'}
+        </div>
+      </td>
+      <td>${effort > 0 ? effort + 'd' : '—'}</td>
+      <td>${complexMix}</td>
       <td><span class="badge ${p.status === 'active' ? 'badge-green' : p.status === 'completed' ? 'badge-blue' : 'badge-gray'}">${p.status}</span></td>
-      <td>${formatDate(p.updated_at)}</td>
       <td onclick="event.stopPropagation()">
         <div style="display:flex;gap:4px;">
           <button class="btn btn-sm btn-secondary" onclick="openProject(${p.id})">Open</button>
@@ -1200,8 +1228,8 @@ function renderOverviewTable(projects) {
           <button class="btn btn-sm btn-danger" onclick="deleteProject(${p.id})">✕</button>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function renderPlatformDist(projects) {
@@ -2693,14 +2721,18 @@ const DEMO_SLIDES = [
                   <div style="font-size:12px;color:rgba(255,255,255,.4);">${esc(p.customer||'')}</div>
                 </div>
               </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
                 <div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px;text-align:center;">
-                  <div style="font-size:22px;font-weight:800;color:#F59E0B;">${p.artifacts_count||0}</div>
+                  <div style="font-size:22px;font-weight:800;color:#F59E0B;">${p.artifact_count||0}</div>
                   <div style="font-size:11px;color:rgba(255,255,255,.4);">Artifacts</div>
                 </div>
                 <div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px;text-align:center;">
-                  <div style="font-size:14px;font-weight:700;color:#10B981;">${esc(p.status||'active')}</div>
-                  <div style="font-size:11px;color:rgba(255,255,255,.4);">Status</div>
+                  <div style="font-size:22px;font-weight:800;color:#10B981;">${p.converted_count||0}</div>
+                  <div style="font-size:11px;color:rgba(255,255,255,.4);">Converted</div>
+                </div>
+                <div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px;text-align:center;">
+                  <div style="font-size:16px;font-weight:700;color:#3B82F6;">${p.total_effort_days||0}d</div>
+                  <div style="font-size:11px;color:rgba(255,255,255,.4);">Effort</div>
                 </div>
               </div>
             </div>`).join('')}

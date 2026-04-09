@@ -187,17 +187,12 @@ router.post('/:id/convert', async (req, res) => {
       [id, runNumber, JSON.stringify(convOutput)]
     );
 
-    await pool.query("UPDATE artifacts SET status = 'converting', updated_at = NOW() WHERE id = $1", [id]);
+    // Update status synchronously — no setTimeout, so loadAllData() sees correct count immediately
+    await pool.query("UPDATE conversion_runs SET status = 'converted', updated_at = NOW() WHERE id = $1", [runResult.rows[0].id]);
+    await pool.query("UPDATE artifacts SET status = 'converted', updated_at = NOW() WHERE id = $1", [id]);
+    await pool.query("UPDATE projects SET updated_at = NOW() WHERE id = (SELECT project_id FROM artifacts WHERE id = $1)", [id]);
 
-    // Complete async after short delay
-    setTimeout(async () => {
-      try {
-        await pool.query("UPDATE conversion_runs SET status = 'converted', updated_at = NOW() WHERE id = $1", [runResult.rows[0].id]);
-        await pool.query("UPDATE artifacts SET status = 'converted', updated_at = NOW() WHERE id = $1", [id]);
-      } catch (e) { console.error('Conversion update error:', e.message); }
-    }, 1500);
-
-    res.json({ ...runResult.rows[0], convert_output: convOutput });
+    res.json({ ...runResult.rows[0], status: 'converted', convert_output: convOutput });
   } catch (err) {
     console.error('Conversion error:', err);
     res.status(500).json({ error: err.message });
