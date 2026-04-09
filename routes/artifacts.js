@@ -13,6 +13,7 @@ const { runConversion } = require('../engine/conversion');
 const { runQA } = require('../engine/qa');
 const { runDeploy } = require('../engine/deploy');
 const { runValidate } = require('../engine/validate');
+const { generateIFlowPackage } = require('../engine/iflow');
 
 // ── List artifacts for a project ──────────────────────────────────────────────
 router.get('/project/:projectId', async (req, res) => {
@@ -274,6 +275,46 @@ router.post('/:id/validate', async (req, res) => {
     res.json(validateResults);
   } catch (err) {
     console.error('Validate error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── DOWNLOAD iFlow Package ─────────────────────────────────────────────────────
+router.get('/:id/download', async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Load artifact + platform data
+    const artResult = await pool.query(
+      'SELECT a.*, p.platform AS project_platform FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id WHERE a.id = $1',
+      [id]
+    );
+    if (!artResult.rows.length) return res.status(404).json({ error: 'Not found' });
+    const art = artResult.rows[0];
+
+    // Load last conversion run output (for iflow_xml if available)
+    const runResult = await pool.query(
+      'SELECT convert_output FROM conversion_runs WHERE artifact_id = $1 ORDER BY run_number DESC LIMIT 1',
+      [id]
+    );
+    const convOutput = runResult.rows.length ? runResult.rows[0].convert_output : null;
+
+    // Get platform connector + enriched data
+    const connector = getConnector(art.platform || art.project_platform);
+    const platformData = await connector.getArtifactData(art);
+
+    // Generate iFlow package ZIP
+    const pkg = generateIFlowPackage(art, platformData, convOutput);
+
+    // Stream as ZIP download
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${pkg.filename}"`);
+    res.setHeader('X-IFlow-Id', pkg.iflowId);
+    res.setHeader('X-IFlow-Name', pkg.iflowName);
+    res.setHeader('X-Package-Name', pkg.packageName);
+    res.send(pkg.buffer);
+
+  } catch (err) {
+    console.error('iFlow download error:', err);
     res.status(500).json({ error: err.message });
   }
 });

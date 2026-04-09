@@ -1,6 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../database/db');
+const AdmZip = require('adm-zip');
+const { getConnector } = require('../connectors');
+const { generateIFlowPackage, buildPackageName } = require('../engine/iflow');
 
 // List all projects with artifact counts
 router.get('/', async (req, res) => {
@@ -97,5 +100,167 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ── DOWNLOAD — Full IS Content Package (all artifacts) ────────────────────────
+router.get('/:id/download', async (req, res) => {
+  const { projectId } = { projectId: req.params.id };
+  try {
+    // Load project
+    const projResult = await pool.query('SELECT * FROM projects WHERE id = $1', [projectId]);
+    if (!projResult.rows.length) return res.status(404).json({ error: 'Project not found' });
+    const project = projResult.rows[0];
+
+    // Load all artifacts — prioritise converted/validated ones, include all
+    const artResult = await pool.query(
+      `SELECT * FROM artifacts WHERE project_id = $1 ORDER BY complexity_score DESC`,
+      [projectId]
+    );
+    const artifacts = artResult.rows;
+    if (!artifacts.length) return res.status(404).json({ error: 'No artifacts found for this project' });
+
+    // Load last conversion run for each artifact
+    const runRows = await pool.query(
+      `SELECT DISTINCT ON (artifact_id) artifact_id, convert_output
+       FROM conversion_runs WHERE artifact_id = ANY($1)
+       ORDER BY artifact_id, run_number DESC`,
+      [artifacts.map(a => a.id)]
+    );
+    const runMap = {};
+    runRows.rows.forEach(r => { runMap[r.artifact_id] = r.convert_output; });
+
+    // Outer content package ZIP
+    const outerZip = new AdmZip();
+    const pkgName  = buildPackageName({ domain: project.platform || 'INT', ...project });
+    const safeProj = project.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const timestamp = new Date().toISOString().split('T')[0];
+
+    // Package manifest
+    const manifestLines = [
+      `# SAP Integration Suite Content Package`,
+      `# Project: ${project.name}`,
+      `# Customer: ${project.customer || '—'}`,
+      `# Platform: ${(project.platform || 'UNKNOWN').toUpperCase()}`,
+      `# Generated: ${new Date().toISOString()}`,
+      `# Tool: IS Migration Tool (Sierra Digital)`,
+      `# Total Artifacts: ${artifacts.length}`,
+      ``,
+      `artifacts:`
+    ];
+
+    // Build each iFlow package and add to outer ZIP
+    let successCount = 0;
+    let errorCount   = 0;
+
+    for (const art of artifacts) {
+      try {
+        const connector  = getConnector(art.platform || project.platform);
+        const platformData = await connector.getArtifactData(art);
+        const convOutput = runMap[art.id] || null;
+
+        const pkg = generateIFlowPackage(art, platformData, convOutput);
+
+        // Add as nested ZIP inside the outer package
+        outerZip.addFile(`iflows/${pkg.filename}`, pkg.buffer);
+
+        manifestLines.push(`  - id: ${pkg.iflowId}`);
+        manifestLines.push(`    name: ${pkg.iflowName}`);
+        manifestLines.push(`    file: iflows/${pkg.filename}`);
+        manifestLines.push(`    complexity: ${art.complexity_level || 'Medium'}`);
+        manifestLines.push(`    status: ${art.status || 'discovered'}`);
+        manifestLines.push(`    readiness: ${art.readiness || 'Manual'}`);
+        manifestLines.push(`    effort_days: ${art.effort_days || 0}`);
+        manifestLines.push(``);
+
+        successCount++;
+      } catch (artErr) {
+        console.error(`Package gen error for ${art.name}:`, artErr.message);
+        manifestLines.push(`  - id: ${art.name}`);
+        manifestLines.push(`    error: ${artErr.message}`);
+        manifestLines.push(``);
+        errorCount++;
+      }
+    }
+
+    // Summary
+    manifestLines.push(`summary:`);
+    manifestLines.push(`  total: ${artifacts.length}`);
+    manifestLines.push(`  packaged: ${successCount}`);
+    manifestLines.push(`  errors: ${errorCount}`);
+    manifestLines.push(`  total_effort_days: ${artifacts.reduce((s, a) => s + (a.effort_days || 0), 0)}`);
+
+    outerZip.addFile('PACKAGE_MANIFEST.yaml', Buffer.from(manifestLines.join('\n') + '\n'));
+
+    // Add a README
+    const readme = buildPackageReadme(project, artifacts, successCount);
+    outerZip.addFile('README.txt', Buffer.from(readme));
+
+    const filename = `${safeProj}_IS_ContentPackage_${timestamp}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Package-Name', pkgName);
+    res.setHeader('X-Artifact-Count', String(successCount));
+    res.send(outerZip.toBuffer());
+
+  } catch (err) {
+    console.error('Project download error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function buildPackageReadme(project, artifacts, count) {
+  const simple  = artifacts.filter(a => a.complexity_level === 'Simple').length;
+  const medium  = artifacts.filter(a => a.complexity_level === 'Medium').length;
+  const complex = artifacts.filter(a => a.complexity_level === 'Complex').length;
+  const effort  = artifacts.reduce((s, a) => s + (a.effort_days || 0), 0);
+
+  return `SAP INTEGRATION SUITE — MIGRATION CONTENT PACKAGE
+===================================================
+Project   : ${project.name}
+Customer  : ${project.customer || '—'}
+Platform  : ${(project.platform || 'UNKNOWN').toUpperCase()}
+Generated : ${new Date().toISOString()}
+Tool      : IS Migration Tool — Sierra Digital
+
+CONTENTS
+--------
+This package contains ${count} iFlow ZIP file(s) ready for import into
+SAP Integration Suite (SAP BTP Cloud Integration).
+
+Each iFlow ZIP includes:
+  • META-INF/MANIFEST.MF         — bundle metadata
+  • src/.../integrationflow/*.iflw — BPMN2 iFlow definition (SAP IS format)
+  • src/.../parameters.prop       — externalized parameters (update before deploy)
+  • src/.../mapping/*.mmap        — message mapping stubs (if applicable)
+  • src/.../script/*.groovy       — Groovy script stubs (if applicable)
+
+COMPLEXITY BREAKDOWN
+--------------------
+  Simple  (auto-convert)  : ${simple} artifacts
+  Medium  (semi-auto)     : ${medium} artifacts
+  Complex (manual review) : ${complex} artifacts
+  Total estimated effort  : ${effort} person-days
+
+HOW TO IMPORT
+-------------
+1. Log into SAP Integration Suite (SAP BTP Cockpit)
+2. Navigate to: Design → Integration Packages
+3. Click "Import" and select an individual iFlow ZIP from the /iflows/ folder
+4. OR create a new Integration Package and import via the package editor
+5. Open each imported iFlow in the Integration Flow Designer
+6. Update all {{PLACEHOLDER}} values in Configure tab before deploying
+7. Deploy to Development tenant, run test messages, then promote to Production
+
+IMPORTANT NOTES
+---------------
+• All {{PLACEHOLDER}} values in parameters.prop MUST be replaced with real values
+• Groovy scripts (.groovy) contain STUBS — implement business logic before go-live
+• Message mappings (.mmap) require XSD schema registration in IS designer
+• Complex iFlows (${complex}) require manual review and testing with real payloads
+• B2B adapters (AS2/IDoc) require additional SAP IS B2B/EDI Add-on license
+
+Sierra Digital — SAP Integration Suite Migration Practice
+https://sierradigital.com
+`;
+}
 
 module.exports = router;
