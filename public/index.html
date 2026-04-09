@@ -1297,18 +1297,41 @@ function renderSourceCards(sources) {
     return;
   }
   el.innerHTML = sources.map(s => {
-    const icon = platformIcon(s.platform);
+    const icon        = platformIcon(s.platform);
+    const total       = parseInt(s.total_artifacts)  || parseInt(s.artifacts_found) || 0;
+    const ready       = parseInt(s.ready_count)      || 0;
+    const converted   = parseInt(s.converted_count)  || 0;
+    const needsAttn   = parseInt(s.needs_attn_count) || 0;
+    const effort      = parseInt(s.total_effort_days)|| 0;
+    const convPct     = total > 0 ? Math.round((converted / total) * 100) : 0;
+
+    // Data source badge
+    const isLive = s.config && (typeof s.config === 'string' ? s.config : JSON.stringify(s.config)).includes('live_api');
+    const isFile = s.type === 'zip';
+    const dataLabel = isLive
+      ? `<span class="badge badge-green">⚡ Live API</span>`
+      : isFile ? `<span class="badge badge-blue">📁 File</span>`
+      : `<span class="badge badge-yellow">🔶 Mock</span>`;
+
     return `
     <div class="source-card" onclick="openSourceArtifacts(${s.id}, '${esc(s.name)}', '${s.platform}')">
       <div class="platform-icon" style="background:${platformBg(s.platform)}">${icon}</div>
       <h4>${esc(s.name)}</h4>
-      <div class="platform-type"><span class="badge platform-${s.platform}">${platformLabel(s.platform)}</span> <span class="badge badge-gray">${s.type.toUpperCase()}</span></div>
-      <div class="source-metrics">
-        <div class="source-metric"><div class="m-val">${s.artifacts_found || 0}</div><div class="m-lbl">Discovered</div></div>
-        <div class="source-metric"><div class="m-val">—</div><div class="m-lbl">Ready</div></div>
-        <div class="source-metric"><div class="m-val">0</div><div class="m-lbl">Converted</div></div>
-        <div class="source-metric"><div class="m-val">0</div><div class="m-lbl">Needs Attn</div></div>
+      <div class="platform-type">
+        <span class="badge platform-${s.platform}">${platformLabel(s.platform)}</span>
+        <span class="badge badge-gray">${(s.type||'').toUpperCase()}</span>
+        ${dataLabel}
       </div>
+      <div class="source-metrics">
+        <div class="source-metric"><div class="m-val">${total}</div><div class="m-lbl">Discovered</div></div>
+        <div class="source-metric"><div class="m-val" style="color:var(--success)">${ready}</div><div class="m-lbl">Ready</div></div>
+        <div class="source-metric">
+          <div class="m-val" style="color:${converted > 0 ? 'var(--accent)' : 'inherit'}">${converted}</div>
+          <div class="m-lbl">Converted${converted > 0 ? ` <span style="font-size:9px;color:var(--text-secondary);">(${convPct}%)</span>` : ''}</div>
+        </div>
+        <div class="source-metric"><div class="m-val" style="color:${needsAttn > 0 ? 'var(--danger)' : 'inherit'}">${needsAttn}</div><div class="m-lbl">Needs Attn</div></div>
+      </div>
+      ${effort > 0 ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">~${effort} effort days · ${s.simple_count||0}S / ${s.medium_count||0}M / ${s.complex_count||0}C</div>` : ''}
     </div>`;
   }).join('');
 }

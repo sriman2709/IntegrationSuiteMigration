@@ -27,8 +27,22 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 // ── GET /api/sources/project/:projectId ──────────────────────────────────────
 router.get('/project/:projectId', async (req, res, next) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM source_connections WHERE project_id = $1 ORDER BY created_at DESC',
+    const result = await pool.query(`
+      SELECT sc.*,
+        COUNT(a.id)                                                             AS total_artifacts,
+        COUNT(a.id) FILTER (WHERE a.readiness = 'Auto')                        AS ready_count,
+        COUNT(a.id) FILTER (WHERE a.status = 'converted')                      AS converted_count,
+        COUNT(a.id) FILTER (WHERE a.status IN ('deployed','validated'))        AS deployed_count,
+        COUNT(a.id) FILTER (WHERE a.readiness = 'Manual' OR a.complexity_level = 'Complex') AS needs_attn_count,
+        COUNT(a.id) FILTER (WHERE a.complexity_level = 'Simple')               AS simple_count,
+        COUNT(a.id) FILTER (WHERE a.complexity_level = 'Medium')               AS medium_count,
+        COUNT(a.id) FILTER (WHERE a.complexity_level = 'Complex')              AS complex_count,
+        COALESCE(SUM(a.effort_days), 0)                                        AS total_effort_days
+      FROM source_connections sc
+      LEFT JOIN artifacts a ON a.source_id = sc.id
+      WHERE sc.project_id = $1
+      GROUP BY sc.id
+      ORDER BY sc.created_at DESC`,
       [req.params.projectId]
     );
     res.json(result.rows);
