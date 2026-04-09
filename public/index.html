@@ -1520,6 +1520,7 @@ async function runAssessment() {
     document.getElementById('assessment-loading').style.display = 'none';
     renderAssessment(result);
     toast('Assessment complete!', 'success');
+    loadAllData().catch(() => {});
   } catch (err) {
     document.getElementById('assessment-loading').style.display = 'none';
     document.getElementById('assessment-empty').style.display = 'block';
@@ -1611,8 +1612,13 @@ async function runConversion() {
   try {
     const result = await api(`/api/artifacts/${state.currentArtifactId}/convert`, 'POST');
     renderConversionOutput(result);
-    toast('Conversion started! iFlow being generated...', 'success');
+    toast('Conversion complete! iFlow generated.', 'success');
+    // Refresh overview stats so tiles reflect the new converted count
+    loadAllData().catch(() => {});
+    // Refresh artifact detail badge
+    if (state.currentArtifactId) loadArtifactDetail(state.currentArtifactId).catch(() => {});
   } catch (err) {
+    document.getElementById('convert-progress').style.display = 'none';
     toast('Conversion failed: ' + err.message, 'error');
   }
 }
@@ -1760,6 +1766,7 @@ async function runQACheck() {
     const result = await api(`/api/artifacts/${state.currentArtifactId}/qa`, 'POST');
     renderQAResults(result);
     toast('QA Check complete!', 'success');
+    loadAllData().catch(() => {});
   } catch (err) {
     toast('QA Check failed: ' + err.message, 'error');
   }
@@ -1808,6 +1815,7 @@ async function deployArtifact() {
     const result = await api(`/api/artifacts/${state.currentArtifactId}/deploy`, 'POST');
     renderDeployResults(result);
     toast('Deployed successfully to CPI!', 'success');
+    loadAllData().catch(() => {});
   } catch (err) {
     toast('Deploy failed: ' + err.message, 'error');
   }
@@ -1862,6 +1870,7 @@ async function validateArtifact() {
     const result = await api(`/api/artifacts/${state.currentArtifactId}/validate`, 'POST');
     renderValidateResults(result);
     toast('Validation complete!', 'success');
+    loadAllData().catch(() => {});
   } catch (err) {
     toast('Validation failed: ' + err.message, 'error');
   }
