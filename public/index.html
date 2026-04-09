@@ -532,6 +532,8 @@ select.form-control{cursor:pointer;}
           <div>
             <h2 id="detail-name">—</h2>
             <div class="detail-meta" id="detail-meta">
+              <span class="meta-item"><strong>Status:</strong> <span id="detail-status">—</span></span>
+              <span class="meta-item">|</span>
               <span class="meta-item"><strong>Readiness:</strong> <span id="detail-readiness">—</span></span>
               <span class="meta-item">|</span>
               <span class="meta-item"><strong>Complexity:</strong> <span id="detail-complexity">—</span></span>
@@ -541,13 +543,22 @@ select.form-control{cursor:pointer;}
               <span class="meta-item"><strong>Effort:</strong> <span id="detail-effort">—</span> days</span>
             </div>
           </div>
-          <div class="action-btns">
+          <div class="action-btns" id="detail-action-btns">
+            <button class="btn btn-secondary" onclick="runAssessment()">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              Assess
+            </button>
             <button class="btn btn-primary" id="btn-run-conversion" onclick="runConversion()">
               <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Run Conversion
+              Convert
             </button>
             <button class="btn btn-secondary" id="btn-qa" onclick="runQACheck()">QA Check</button>
             <button class="btn btn-success btn-sm" id="btn-deploy" onclick="deployArtifact()">Deploy</button>
+            <button class="btn btn-secondary btn-sm" id="btn-validate" onclick="validateArtifact()">Validate</button>
+            <button class="btn btn-secondary btn-sm" id="btn-download-iflow" style="display:none;" onclick="downloadIFlowPackage()">
+              <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download iFlow
+            </button>
           </div>
         </div>
       </div>
@@ -633,7 +644,7 @@ select.form-control{cursor:pointer;}
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;">
           <div>
-            <button class="btn btn-accent" id="btn-download-iflow" onclick="downloadIFlowPackage()" style="display:none;">
+            <button class="btn btn-accent" id="btn-download-iflow-tab" onclick="downloadIFlowPackage()" style="display:none;">
               <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
               Download iFlow Package
             </button>
@@ -1403,10 +1414,15 @@ async function loadArtifactStats(projectId) {
   try {
     const stats = await api(`/api/artifacts/project/${projectId}/stats`);
     const el = document.getElementById('artifact-stats-row');
+    const convPct = stats.total > 0 ? Math.round((parseInt(stats.converted_count) / parseInt(stats.total)) * 100) : 0;
     el.innerHTML = `
       <div class="stat-card" style="padding:12px 16px;">
         <div class="label" style="font-size:10px;">Total</div>
         <div class="value" style="font-size:22px;">${stats.total}</div>
+      </div>
+      <div class="stat-card" style="padding:12px 16px;">
+        <div class="label" style="font-size:10px;color:var(--accent);">Converted</div>
+        <div class="value" style="font-size:22px;color:var(--accent);">${stats.converted_count}${convPct > 0 ? ` <span style="font-size:12px;color:var(--text-secondary);">(${convPct}%)</span>` : ''}</div>
       </div>
       <div class="stat-card" style="padding:12px 16px;">
         <div class="label" style="font-size:10px;color:#16A34A;">Simple</div>
@@ -1501,6 +1517,7 @@ async function openArtifactDetail(artifactId) {
 
     // Update header
     document.getElementById('detail-name').textContent = data.name;
+    document.getElementById('detail-status').innerHTML = statusBadgeHtml(data.status);
     document.getElementById('detail-readiness').innerHTML = `<span class="badge ${data.readiness === 'Auto' ? 'badge-green' : data.readiness === 'Manual' ? 'badge-red' : 'badge-yellow'}">${data.readiness || 'Partial'}</span>`;
     document.getElementById('detail-complexity').innerHTML = `<span class="complexity-${(data.complexity_level || 'Simple').toLowerCase()}">${data.complexity_level || '—'}</span>`;
     document.getElementById('detail-score').textContent = data.complexity_score || 0;
@@ -1666,8 +1683,8 @@ async function runConversion() {
     toast('Conversion complete! iFlow generated.', 'success');
     // Refresh overview stats so tiles reflect the new converted count
     loadAllData().catch(() => {});
-    // Refresh artifact detail badge
-    if (state.currentArtifactId) loadArtifactDetail(state.currentArtifactId).catch(() => {});
+    // Refresh the status badge in the artifact detail header
+    refreshDetailHeader(state.currentArtifactId);
   } catch (err) {
     document.getElementById('convert-progress').style.display = 'none';
     toast('Conversion failed: ' + err.message, 'error');
@@ -1803,9 +1820,11 @@ function renderConversionOutput(run) {
   document.getElementById('convert-progress').style.display = 'none';
   document.getElementById('progress-bar').style.width = '100%';
 
-  // Show the download button now that conversion output is available
-  const dlBtn = document.getElementById('btn-download-iflow');
-  if (dlBtn) dlBtn.style.display = 'inline-flex';
+  // Show both download buttons now that conversion output is available
+  ['btn-download-iflow', 'btn-download-iflow-tab'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = 'inline-flex';
+  });
 }
 
 // ── QA CHECK ────────────────────────────────────────────────────────────────
@@ -1818,6 +1837,7 @@ async function runQACheck() {
     renderQAResults(result);
     toast('QA Check complete!', 'success');
     loadAllData().catch(() => {});
+    refreshDetailHeader(state.currentArtifactId);
   } catch (err) {
     toast('QA Check failed: ' + err.message, 'error');
   }
@@ -1867,6 +1887,7 @@ async function deployArtifact() {
     renderDeployResults(result);
     toast('Deployed successfully to CPI!', 'success');
     loadAllData().catch(() => {});
+    refreshDetailHeader(state.currentArtifactId);
   } catch (err) {
     toast('Deploy failed: ' + err.message, 'error');
   }
@@ -1922,9 +1943,34 @@ async function validateArtifact() {
     renderValidateResults(result);
     toast('Validation complete!', 'success');
     loadAllData().catch(() => {});
+    refreshDetailHeader(state.currentArtifactId);
   } catch (err) {
     toast('Validation failed: ' + err.message, 'error');
   }
+}
+
+// Lightweight header refresh — re-fetches artifact and updates status/complexity/effort badges
+async function refreshDetailHeader(artifactId) {
+  if (!artifactId) return;
+  try {
+    const data = await api(`/api/artifacts/${artifactId}`);
+    state.currentArtifact = data;
+    const statusEl = document.getElementById('detail-status');
+    if (statusEl) statusEl.innerHTML = statusBadgeHtml(data.status);
+    const readinessEl = document.getElementById('detail-readiness');
+    if (readinessEl) readinessEl.innerHTML = `<span class="badge ${data.readiness === 'Auto' ? 'badge-green' : data.readiness === 'Manual' ? 'badge-red' : 'badge-yellow'}">${data.readiness || 'Partial'}</span>`;
+    const scoreEl = document.getElementById('detail-score');
+    if (scoreEl) scoreEl.textContent = data.complexity_score || 0;
+    const effortEl = document.getElementById('detail-effort');
+    if (effortEl) effortEl.textContent = data.effort_days || 0;
+    // Also refresh the download button visibility
+    if (data.runs && data.runs.length > 0) {
+      ['btn-download-iflow', 'btn-download-iflow-tab'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = 'inline-flex';
+      });
+    }
+  } catch (e) { /* silent — non-critical */ }
 }
 
 function renderValidateResults(val) {
@@ -2271,7 +2317,8 @@ async function deleteProject(id) {
 
 async function downloadIFlowPackage() {
   if (!state.currentArtifactId) { toast('No artifact selected', 'warning'); return; }
-  const btn = document.getElementById('btn-download-iflow');
+  // Use whichever download button is currently visible
+  const btn = document.getElementById('btn-download-iflow-tab') || document.getElementById('btn-download-iflow');
   const origLabel = btn ? btn.innerHTML : '';
   if (btn) {
     btn.disabled = true;
