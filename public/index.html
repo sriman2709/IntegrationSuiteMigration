@@ -846,6 +846,42 @@ select.form-control{cursor:pointer;}
   </div>
 </div>
 
+<!-- ═══ CREDENTIALS CONFIG MODAL ════════════════════════════════════ -->
+<div id="modal-credentials" class="modal-backdrop" style="display:none;" onclick="if(event.target===this)closeCredentialModal()">
+  <div class="modal" style="width:480px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="cred-modal-title">Configure Boomi Connection</div>
+      <button class="modal-close" onclick="closeCredentialModal()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:20px;">
+      <p style="margin:0 0 16px;color:var(--text-secondary);font-size:13px;">
+        Source: <strong id="cred-source-name"></strong><br>
+        Enter your Boomi AtomSphere credentials to enable live API sync.
+        The tool falls back to demo data automatically if not configured.
+      </p>
+      <div class="form-group">
+        <label class="form-label">Account ID</label>
+        <input id="cred-account-id" class="form-input" placeholder="e.g. sierradigitalinc-7LJN56" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Settings → Account Information → Account ID</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Username (email)</label>
+        <input id="cred-username" class="form-input" placeholder="e.g. you@company.com" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">API Token</label>
+        <input id="cred-token" class="form-input" type="password" placeholder="Paste API token from My Profile → API Tokens" />
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Profile (top right) → My Profile → API Tokens → Generate</div>
+      </div>
+      <div id="cred-test-result" style="min-height:20px;margin-bottom:8px;font-size:13px;"></div>
+    </div>
+    <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:16px 20px;border-top:1px solid var(--border);">
+      <button class="btn btn-secondary" onclick="closeCredentialModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="testAndSaveCredentials()">Test & Save Connection</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ CREATE PROJECT MODAL ═════════════════════════════════════════ -->
 <div id="project-modal" class="modal-backdrop" style="display:none;" onclick="closeProjectModal(event)">
   <div class="modal" style="width:500px;" onclick="event.stopPropagation()">
@@ -1093,25 +1129,39 @@ function renderSourceCards(sources) {
 function renderSourcesTable(sources) {
   const tbody = document.getElementById('sources-table');
   if (!sources.length) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-muted);">No sources connected yet</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text-muted);">No sources connected yet</td></tr>`;
     return;
   }
-  tbody.innerHTML = sources.map(s => `
+  tbody.innerHTML = sources.map(s => {
+    const cfg        = s.config || {};
+    const dataSource = cfg.dataSource || 'mock';
+    const isLive     = dataSource === 'live_api';
+    const isMock     = dataSource === 'mock' || dataSource === 'mock_fallback' || dataSource === 'mock_empty';
+    const isFile     = dataSource === 'file_upload';
+    const dataLabel  = isLive ? `<span class="badge badge-green" title="Connected to live ${s.platform} API">⚡ Live API</span>`
+                     : isFile ? `<span class="badge badge-blue" title="Parsed from uploaded file">📁 File</span>`
+                     : `<span class="badge badge-yellow" title="Using demo data — configure credentials for live API">🔶 Mock</span>`;
+    const configBtn  = s.platform === 'boomi' && s.type === 'api'
+      ? `<button class="btn btn-sm btn-secondary" onclick="openCredentialModal(${s.id},'${esc(s.name)}','${s.platform}')" title="Configure API credentials">⚙ Config</button>`
+      : '';
+    return `
     <tr>
       <td><span class="badge badge-gray">${s.type.toUpperCase()}</span></td>
       <td><strong class="clickable-row" onclick="openSourceArtifacts(${s.id},'${esc(s.name)}','${s.platform}')">${esc(s.name)}</strong></td>
       <td><span class="badge platform-${s.platform}">${platformLabel(s.platform)}</span></td>
       <td>${s.artifacts_found || 0}</td>
+      <td>${dataLabel}</td>
       <td><span class="badge ${s.status === 'synced' ? 'badge-green' : s.status === 'failed' ? 'badge-red' : 'badge-yellow'}">${s.status}</span></td>
       <td>${s.last_synced_at ? formatDate(s.last_synced_at) : '—'}</td>
       <td>
         <div style="display:flex;gap:4px;">
-          <button class="btn btn-sm btn-secondary" onclick="syncSource(${s.id})">↻ Sync</button>
+          ${configBtn}
+          <button class="btn btn-sm btn-secondary" onclick="syncSource(${s.id})" id="sync-btn-${s.id}">↻ Sync</button>
           <button class="btn btn-sm btn-danger" onclick="deleteSource(${s.id})">✕</button>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 async function openSourceArtifacts(sourceId, sourceName, platform) {
@@ -1842,13 +1892,74 @@ async function submitAPIConnection() {
 }
 
 async function syncSource(id) {
-  toast('Syncing source...', 'warning');
+  const btn = document.getElementById(`sync-btn-${id}`);
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Syncing...'; }
   try {
-    await api(`/api/sources/${id}/sync`, 'POST');
-    toast('Sync complete!', 'success');
+    const result = await api(`/api/sources/${id}/sync`, 'POST');
+    const mode   = result.data_source || result.mode || 'unknown';
+    const count  = result.artifacts_found || 0;
+    if (mode === 'live_api') {
+      toast(`⚡ Live sync complete — ${count} processes from real Boomi API`, 'success');
+    } else if (mode === 'file_upload') {
+      toast(`📁 File source refreshed — ${count} artifacts`, 'success');
+    } else {
+      toast(`✓ Sync complete — ${count} artifacts (demo data)`, 'success');
+    }
     await loadSources(state.currentProjectId);
   } catch (err) {
     toast('Sync failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '↻ Sync'; }
+  }
+}
+
+// ── Credential Config Modal ───────────────────────────────────────────────────
+function openCredentialModal(sourceId, sourceName, platform) {
+  state.configSourceId = sourceId;
+  document.getElementById('cred-modal-title').textContent = `Configure ${platformLabel(platform)} Connection`;
+  document.getElementById('cred-source-name').textContent = sourceName;
+  document.getElementById('cred-account-id').value = '';
+  document.getElementById('cred-username').value   = '';
+  document.getElementById('cred-token').value      = '';
+  document.getElementById('cred-test-result').innerHTML = '';
+  document.getElementById('modal-credentials').style.display = 'flex';
+}
+
+function closeCredentialModal() {
+  document.getElementById('modal-credentials').style.display = 'none';
+  state.configSourceId = null;
+}
+
+async function testAndSaveCredentials() {
+  const accountId = document.getElementById('cred-account-id').value.trim();
+  const username  = document.getElementById('cred-username').value.trim();
+  const token     = document.getElementById('cred-token').value.trim();
+  const resultEl  = document.getElementById('cred-test-result');
+
+  if (!accountId || !username || !token) {
+    resultEl.innerHTML = `<span style="color:var(--danger)">All fields are required</span>`;
+    return;
+  }
+
+  resultEl.innerHTML = `<span style="color:var(--text-muted)">⟳ Testing connection...</span>`;
+
+  try {
+    const testResult = await api('/api/sources/test-connection', 'POST', { platform: 'boomi', config: { accountId, username, token } });
+
+    if (testResult.success) {
+      const atomInfo = testResult.atoms?.length ? ` — ${testResult.atoms.length} atom(s): ${testResult.atoms.slice(0,2).join(', ')}` : '';
+      resultEl.innerHTML = `<span style="color:var(--success)">✓ Connected${atomInfo}</span>`;
+
+      // Save credentials
+      await api(`/api/sources/${state.configSourceId}/credentials`, 'PATCH', { accountId, username, token });
+      toast('Credentials saved — click Sync to pull live data', 'success');
+      closeCredentialModal();
+      await loadSources(state.currentProjectId);
+    } else {
+      resultEl.innerHTML = `<span style="color:var(--danger)">✗ ${testResult.error || 'Connection failed'}</span>`;
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<span style="color:var(--danger)">✗ ${err.message}</span>`;
   }
 }
 
