@@ -4,6 +4,7 @@ const { pool } = require('../database/db');
 const AdmZip = require('adm-zip');
 const { getConnector } = require('../connectors');
 const { generateIFlowPackage, buildPackageName } = require('../engine/iflow');
+const { generatePDFReport } = require('../engine/pdf');
 
 // List all projects with artifact counts
 router.get('/', async (req, res) => {
@@ -97,6 +98,49 @@ router.delete('/:id', async (req, res) => {
     await pool.query('DELETE FROM projects WHERE id = $1', [req.params.id]);
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PDF Assessment Report ─────────────────────────────────────────────────────
+router.get('/:id/pdf', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [projRes, artRes, statsRes] = await Promise.all([
+      pool.query('SELECT * FROM projects WHERE id = $1', [id]),
+      pool.query('SELECT * FROM artifacts WHERE project_id = $1 ORDER BY complexity_score DESC', [id]),
+      pool.query(`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE complexity_level = 'Simple')  AS simple_count,
+          COUNT(*) FILTER (WHERE complexity_level = 'Medium')  AS medium_count,
+          COUNT(*) FILTER (WHERE complexity_level = 'Complex') AS complex_count,
+          COUNT(*) FILTER (WHERE readiness = 'Auto')           AS auto_count,
+          COUNT(*) FILTER (WHERE readiness = 'Partial')        AS partial_count,
+          COUNT(*) FILTER (WHERE readiness = 'Manual')         AS manual_count,
+          COALESCE(SUM(effort_days), 0)                        AS total_effort_days
+        FROM artifacts WHERE project_id = $1
+      `, [id])
+    ]);
+
+    if (!projRes.rows.length) return res.status(404).json({ error: 'Project not found' });
+
+    const project  = projRes.rows[0];
+    const artifacts = artRes.rows;
+    const stats    = statsRes.rows[0];
+
+    const pdfBuffer = await generatePDFReport(project, artifacts, stats);
+
+    const safeProj = (project.name || 'project').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const date     = new Date().toISOString().split('T')[0];
+    const filename = `${safeProj}_IS_Assessment_${date}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.send(pdfBuffer);
+  } catch (err) {
+    console.error('PDF generation error:', err);
     res.status(500).json({ error: err.message });
   }
 });

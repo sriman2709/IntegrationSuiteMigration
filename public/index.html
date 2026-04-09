@@ -449,9 +449,13 @@ select.form-control{cursor:pointer;}
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Download All iFlows
           </button>
-          <button class="btn btn-primary btn-sm" onclick="downloadReport()">
+          <button class="btn btn-primary btn-sm" onclick="downloadPDFReport()" id="btn-pdf-report" title="Download Sierra Digital branded PDF assessment report">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Download PDF Report
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="downloadReport()" title="Download CSV/text summary report">
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            Download Report
+            CSV Report
           </button>
         </div>
       </div>
@@ -1957,6 +1961,32 @@ async function downloadIFlowPackage() {
     toast(`iFlow package downloaded: ${filename}`, 'success');
   } catch (err) {
     toast('Download failed: ' + err.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+  }
+}
+
+async function downloadPDFReport() {
+  if (!state.currentProjectId) { toast('No project selected', 'warning'); return; }
+  const btn = document.getElementById('btn-pdf-report');
+  const origLabel = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="spin" width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> Generating PDF...`;
+  }
+  try {
+    const resp = await fetch(`/api/projects/${state.currentProjectId}/pdf`);
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || resp.statusText);
+    }
+    const blob = await resp.blob();
+    const filename = resp.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
+                     || `IS_Assessment_Report.pdf`;
+    triggerDownload(blob, filename);
+    toast('PDF Assessment Report downloaded', 'success');
+  } catch (err) {
+    toast('PDF generation failed: ' + err.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
   }

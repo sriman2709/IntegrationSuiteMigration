@@ -1,625 +1,613 @@
 {
-  "OrderFulfillment_Orchestration": {
-    "platformId": "tibco-p4-OrderFulfillment_Orchestration",
-    "projectPath": "/RetailCo/SCM/OrderFulfillment",
-    "description": "Master order fulfillment orchestration — receives order from e-commerce, checks inventory, routes to 3PL, and triggers SAP SD order creation.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-20T10:00:00Z",
+  "SAP_GL_Journal_Entry_Sync": {
+    "platformId": "tibco-slb-gl-journal-001",
+    "projectPath": "/SLB/Finance/GL",
+    "description": "Scheduled synchronisation of General Ledger journal entries from SLB operational systems to SAP FI, with cost centre and profit centre validation.",
+    "deployedTo": ["SLB-BW-Finance-PROD"],
+    "lastModified": "2024-09-15T06:00:00Z",
     "activities": [
-      {"type":"Receive","label":"Receive Order HTTP Request","transport":"HTTP","method":"POST","path":"/orders/fulfill"},
-      {"type":"JDBCQuery","label":"Check Inventory Availability","table":"INVENTORY_CURRENT","operation":"SELECT"},
-      {"type":"Mapper","label":"Map Order to SAP Format","xslt":true},
-      {"type":"HTTPRequest","label":"Create SAP Sales Order","endpoint":"SAP RFC via HTTP"},
-      {"type":"Decision","label":"Order Created in SAP?"},
-      {"type":"HTTPRequest","label":"Send Pick Instruction to 3PL","endpoint":"3PL REST API /picks"},
-      {"type":"Mapper","label":"Map 3PL Response to Customer Notification","xslt":false},
-      {"type":"JDBCUpdate","label":"Update Order Status in DB","table":"ORDERS","operation":"UPDATE"},
-      {"type":"Reply","label":"Return Order Confirmation"}
+      {"type":"TimerTrigger","label":"Nightly Schedule","transport":"Timer"},
+      {"type":"JDBCQuery","label":"Query GL Source","transport":"JDBC"},
+      {"type":"Mapper","label":"GL to SAP FI Map","transport":"Internal"},
+      {"type":"JavaActivity","label":"Validate Cost Object","transport":"Internal"},
+      {"type":"JDBCQuery","label":"Get Period Status","transport":"JDBC"},
+      {"type":"RFCActivity","label":"Post to SAP FI","transport":"RFC"},
+      {"type":"JDBCActivity","label":"Log Result","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["HTTP_Client_SAP","HTTP_Client_3PL","JDBC_RetailCo_OMS"],
-    "connectorTypes": ["HTTP","JDBC"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_FinanceDB_JDBC","SLB_GLSource_JDBC"],
     "mappers": [
-      {"name":"OrderToSAPFormat","type":"XSLT","fields":29,"hasCustomXPath":true},
-      {"name":"ThreePLResponseMapper","type":"BW Mapper","fields":14},
-      {"name":"StatusUpdateMapper","type":"BW Mapper","fields":8}
+      {"name":"GLEntryMapper","type":"BW Mapper","fields":["CompanyCode","FiscalYear","PostingDate","GLAccount","CostCentre","ProfitCentre","Amount","Currency","Reference"],"hasCustomXPath":false},
+      {"name":"CostObjectMapper","type":"XSLT","fields":["WBSElement","OrderNumber","CostCentre","ProfitCentre"],"hasCustomXPath":true},
+      {"name":"PeriodValidationMapper","type":"BW Mapper","fields":["FiscalPeriod","PostingPeriodStatus"],"hasCustomXPath":false}
     ],
     "scripts": [
-      {"language":"Java","name":"InventoryAllocator","purpose":"Multi-location inventory allocation logic with priority warehouse selection"},
-      {"language":"Java","name":"3PLRoutingEngine","purpose":"Selects optimal 3PL based on delivery SLA, carrier rates, and regional availability"}
+      {"name":"CostObjectValidator","language":"java","purpose":"Validate cost object assignments against SAP CO master data"},
+      {"name":"GLAccountDetermination","language":"java","purpose":"Auto-determine GL account from cost category and business transaction type"}
     ],
-    "errorHandling": {"type":"try_catch","hasTimeout":true,"timeoutSeconds":30,"hasFaultHandler":true},
-    "dependencies": ["SCM_Common.bwlib","SAP_RFC_Library","3PL_Integration_Shared"],
-    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (SAP OData)","HTTPS Receiver (3PL API)","JDBC Adapter"]
+    "errorHandling": {"type":"try_catch","alertEmail":"finance@slb.com"},
+    "dependencies": ["SLB_FinanceDB","SAP_FI_Posting","SAP_CO_MasterData"],
+    "iflowAdapters": ["Timer Sender Adapter","JDBC Adapter","RFC Adapter (SAP S/4HANA)"]
   },
-  "InventoryLevel_Sync_Batch": {
-    "platformId": "tibco-p4-InventoryLevel_Sync_Batch",
-    "projectPath": "/RetailCo/SCM/InventorySync",
-    "description": "Scheduled nightly batch sync of inventory levels from SAP WM to OMS and e-commerce platform.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-10-15T03:00:00Z",
+  "AP_Invoice_Workflow_3Way_Match": {
+    "platformId": "tibco-slb-ap-invoice-002",
+    "projectPath": "/SLB/Finance/AP",
+    "description": "End-to-end accounts payable invoice workflow with 3-way matching against PO and GR, exception routing, and SAP FI posting for SLB vendor invoices.",
+    "deployedTo": ["SLB-BW-Finance-PROD","SLB-BW-Finance-DR"],
+    "lastModified": "2024-10-08T09:00:00Z",
     "activities": [
-      {"type":"Timer","label":"Schedule Nightly Batch","config":"0 1 * * *"},
-      {"type":"JDBCQuery","label":"Extract SAP Inventory Levels","table":"MARD_SAP","operation":"SELECT"},
-      {"type":"Mapper","label":"Map to OMS Inventory Format","xslt":false},
-      {"type":"HTTPRequest","label":"POST Batch to OMS API","endpoint":"OMS REST API /inventory/batch"},
-      {"type":"Mapper","label":"Map to eCommerce Availability","xslt":false},
-      {"type":"HTTPRequest","label":"PUT Availability to eCommerce","endpoint":"eCommerce API /products/availability"},
-      {"type":"JDBCUpdate","label":"Update Sync Timestamp","table":"SYNC_STATUS","operation":"UPDATE"}
+      {"type":"SFTPReceive","label":"Receive Invoice Files","transport":"SFTP"},
+      {"type":"FilePoller","label":"Poll Invoice Inbox","transport":"File"},
+      {"type":"JavaActivity","label":"OCR Extract","transport":"Internal"},
+      {"type":"Mapper","label":"Invoice to SAP Format","transport":"Internal"},
+      {"type":"JavaActivity","label":"3-Way Match","transport":"Internal"},
+      {"type":"Mapper","label":"Match Result Router","transport":"Internal"},
+      {"type":"RFCActivity","label":"Post MIRO","transport":"RFC"},
+      {"type":"HTTPActivity","label":"Route Exception","transport":"HTTP"},
+      {"type":"SMTPActivity","label":"Notify AP Team","transport":"SMTP"},
+      {"type":"JDBCActivity","label":"Update Invoice Log","transport":"JDBC"},
+      {"type":"JDBCActivity","label":"Archive Invoice","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["JDBC_RetailCo_SAP","HTTP_Client_OMS","HTTP_Client_eCommerce"],
-    "connectorTypes": ["JDBC","HTTP"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_FinanceDB_JDBC","SLB_SFTP_InvoiceConn","SLB_SMTP_Conn","SLB_APWorkflow_HTTP"],
     "mappers": [
-      {"name":"SAP_to_OMS_Inventory","type":"BW Mapper","fields":22},
-      {"name":"SAP_to_eCommerce_Availability","type":"BW Mapper","fields":11}
+      {"name":"InvoiceToSAPMapper","type":"XSLT","fields":["VendorNumber","InvoiceDate","Amount","Currency","TaxCode","PaymentTerms","LineItems","CostObjects"],"hasCustomXPath":true},
+      {"name":"ThreeWayMatchMapper","type":"BW Mapper","fields":["PONumber","GRNumber","InvoiceAmount","QuantityVariance","PriceVariance","ToleranceResult"],"hasCustomXPath":false},
+      {"name":"ExceptionRoutingMapper","type":"XSLT","fields":["ExceptionType","ApproverID","EscalationLevel","CostCentre","ApprovalLimit"],"hasCustomXPath":true},
+      {"name":"ArchiveFormatMapper","type":"BW Mapper","fields":["DocumentNumber","ArchiveKey","Timestamp"],"hasCustomXPath":false},
+      {"name":"MIROPostingMapper","type":"XSLT","fields":["CompanyCode","FiscalYear","VendorAccount","BaselineDate","PaymentBlock","LineItems"],"hasCustomXPath":true}
+    ],
+    "scripts": [
+      {"name":"InvoiceOCRProcessor","language":"java","purpose":"Extract invoice fields from PDF using SLB vendor template library"},
+      {"name":"ThreeWayMatchEngine","language":"java","purpose":"Perform 3-way match with configurable price and quantity tolerances per vendor"},
+      {"name":"APExceptionRouter","language":"java","purpose":"Route invoice exceptions based on amount thresholds and cost centre authority matrix"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","retryCount":3,"deadLetterQueue":"slb-ap-dlq","alertEmail":"ap@slb.com"},
+    "dependencies": ["SAP_FI_MIRO","SAP_MM_PO","SAP_MM_GR","SLB_APWorkflow","InvoiceArchiveDB","SFTP_InvoiceIn"],
+    "iflowAdapters": ["SFTP Sender Adapter","Mail Sender Adapter","RFC Adapter (SAP S/4HANA)","HTTP Receiver Adapter","Mail Adapter","JDBC Adapter"]
+  },
+  "Project_Billing_Revenue_Export": {
+    "platformId": "tibco-slb-billing-003",
+    "projectPath": "/SLB/Finance/Billing",
+    "description": "Export drilling project billing data from SAP PS to SLB client billing system, generating invoices for day-rate, footage, and performance-based contracts.",
+    "deployedTo": ["SLB-BW-Finance-PROD"],
+    "lastModified": "2024-09-22T07:00:00Z",
+    "activities": [
+      {"type":"TimerTrigger","label":"Monthly Billing Run","transport":"Timer"},
+      {"type":"RFCActivity","label":"Get SAP PS Billing Data","transport":"RFC"},
+      {"type":"Mapper","label":"Billing Data Transform","transport":"Internal"},
+      {"type":"JavaActivity","label":"Contract Rate Calculation","transport":"Internal"},
+      {"type":"Mapper","label":"Invoice Format Builder","transport":"Internal"},
+      {"type":"HTTPActivity","label":"Post to Billing System","transport":"HTTP"},
+      {"type":"SFTPSend","label":"Archive Invoice","transport":"SFTP"},
+      {"type":"SMTPActivity","label":"Notify Finance","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_BillingSystem_HTTP","SLB_SFTP_BillingConn","SLB_SMTP_Conn"],
+    "mappers": [
+      {"name":"BillingDataTransformer","type":"XSLT","fields":["ProjectNumber","WBSElement","BillingMilestone","ActualCosts","ContractValue","InvoiceAmount"],"hasCustomXPath":true},
+      {"name":"ContractRateMapper","type":"BW Mapper","fields":["DayRate","StandbyRate","MobilizationFee","PerformanceBonus"],"hasCustomXPath":false},
+      {"name":"InvoiceFormatBuilder","type":"XSLT","fields":["ClientName","ContractNumber","InvoicePeriod","LineItems","TaxAmount","TotalAmount"],"hasCustomXPath":true},
+      {"name":"ArchiveIndexMapper","type":"BW Mapper","fields":["InvoiceNumber","CustomerNumber","Amount","Status"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"ContractRateCalculator","language":"java","purpose":"Calculate billing amounts from contract rate schedules with day-rate tiers"},
+      {"name":"TaxDetermination","language":"java","purpose":"Determine applicable tax rates by country and service type for invoice generation"}
+    ],
+    "errorHandling": {"type":"try_catch","alertEmail":"billing@slb.com"},
+    "dependencies": ["SAP_PS_BillingData","SLB_BillingSystem","SLB_ContractDB","BillingArchiveSFTP"],
+    "iflowAdapters": ["Timer Sender Adapter","RFC Adapter (SAP S/4HANA)","HTTP Receiver Adapter","SFTP Receiver Adapter","Mail Adapter"]
+  },
+  "Cost_Center_Budget_Allocation": {
+    "platformId": "tibco-slb-budget-004",
+    "projectPath": "/SLB/Finance/Budget",
+    "description": "Annual and quarterly cost centre budget allocation from SLB planning system to SAP CO budget management.",
+    "deployedTo": ["SLB-BW-Finance-PROD"],
+    "lastModified": "2024-07-10T08:00:00Z",
+    "activities": [
+      {"type":"TimerTrigger","label":"Quarterly Schedule","transport":"Timer"},
+      {"type":"JDBCQuery","label":"Get Budget Plan","transport":"JDBC"},
+      {"type":"RFCActivity","label":"Post SAP CO Budget","transport":"RFC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_PlanningDB_JDBC"],
+    "mappers": [
+      {"name":"BudgetAllocationMapper","type":"BW Mapper","fields":["CostCentre","GLAccount","FiscalYear","Period","BudgetAmount","Currency"],"hasCustomXPath":false}
     ],
     "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["SCM_Common.bwlib"],
-    "iflowAdapters": ["Timer Start Event","JDBC Adapter","HTTPS Receiver (OMS)","HTTPS Receiver (eCommerce)"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_CO_Budget","SLB_PlanningDB"],
+    "iflowAdapters": ["Timer Sender Adapter","JDBC Adapter","RFC Adapter (SAP S/4HANA)"]
   },
-  "CustomerLoyalty_Event_Process": {
-    "platformId": "tibco-p4-CustomerLoyalty_Event_Process",
-    "projectPath": "/RetailCo/CRM/LoyaltyEvents",
-    "description": "JMS consumer for customer loyalty events — processes point accumulation, tier changes, and reward redemptions.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-08T11:00:00Z",
+  "Treasury_FX_Rate_Integration": {
+    "platformId": "tibco-slb-fx-rate-005",
+    "projectPath": "/SLB/Finance/Treasury",
+    "description": "Ingest daily foreign exchange rates from Reuters/Bloomberg treasury feed and update SAP FI exchange rate table for multi-currency postings.",
+    "deployedTo": ["SLB-BW-Finance-PROD"],
+    "lastModified": "2024-08-18T05:00:00Z",
     "activities": [
-      {"type":"JMSReceive","label":"Consume loyalty.events Queue","config":"TIBCO EMS — loyalty.events"},
-      {"type":"Mapper","label":"Parse Loyalty Event","xslt":false},
-      {"type":"Decision","label":"Event Type Router"},
-      {"type":"JDBCQuery","label":"Get Customer Loyalty Profile","table":"LOYALTY_ACCOUNTS","operation":"SELECT"},
-      {"type":"Mapper","label":"Calculate Points Delta","xslt":false},
-      {"type":"JDBCUpdate","label":"Update Loyalty Points","table":"LOYALTY_ACCOUNTS","operation":"UPDATE"},
-      {"type":"JMSPublish","label":"Publish loyalty.updated Event","config":"TIBCO EMS — loyalty.updated"},
-      {"type":"JDBCInsert","label":"Log Loyalty Transaction","table":"LOYALTY_TRANSACTIONS","operation":"INSERT"}
+      {"type":"TimerTrigger","label":"Daily FX Feed","transport":"Timer"},
+      {"type":"HTTPActivity","label":"Get Reuters FX Rates","transport":"HTTP"},
+      {"type":"Mapper","label":"FX Rate Transform","transport":"Internal"},
+      {"type":"JavaActivity","label":"Validate Rate Reasonableness","transport":"Internal"},
+      {"type":"RFCActivity","label":"Update SAP FX Table","transport":"RFC"},
+      {"type":"JDBCActivity","label":"Log Rate History","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["TIBCO_EMS_Connection","JDBC_RetailCo_Loyalty"],
-    "connectorTypes": ["JMS","JDBC"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_TreasuryDB_JDBC","SLB_Reuters_HTTP"],
     "mappers": [
-      {"name":"LoyaltyEventParser","type":"BW Mapper","fields":18},
-      {"name":"PointsDeltaCalculator","type":"BW Mapper","fields":12}
+      {"name":"FXRateTransformer","type":"XSLT","fields":["FromCurrency","ToCurrency","Rate","RateType","ValidFrom","ValidTo"],"hasCustomXPath":true},
+      {"name":"SAPExchangeRateMapper","type":"BW Mapper","fields":["ExchangeRateType","FromCurrency","ToCurrency","ValidFromDate","ExchangeRate"],"hasCustomXPath":false},
+      {"name":"RateHistoryMapper","type":"BW Mapper","fields":["RateDate","CurrencyPair","Rate","Source"],"hasCustomXPath":false}
     ],
     "scripts": [
-      {"language":"Java","name":"TierEvaluator","purpose":"Evaluates tier change eligibility based on annual spend and frequency thresholds"}
+      {"name":"RateReasonablenessCheck","language":"java","purpose":"Validate FX rates are within configurable tolerance bands vs prior day rate"}
     ],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["CRM_Common.bwlib","Loyalty_Calculations.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","JMS Receiver Adapter","JDBC Adapter"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SLB_Reuters_API","SAP_FI_ExchangeRate","TreasuryDB"],
+    "iflowAdapters": ["Timer Sender Adapter","HTTP Receiver Adapter","RFC Adapter (SAP S/4HANA)","JDBC Adapter"]
   },
-  "POS_Transaction_Inbound": {
-    "platformId": "tibco-p4-POS_Transaction_Inbound",
-    "projectPath": "/RetailCo/POS/Transactions",
-    "description": "SFTP file listener for POS transaction files — parses daily transaction export, validates, and posts to SAP FI.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-25T07:00:00Z",
+  "Fixed_Assets_Depreciation_Sync": {
+    "platformId": "tibco-slb-assets-depr-006",
+    "projectPath": "/SLB/Finance/Assets",
+    "description": "Synchronise fixed asset additions and disposals from SLB asset management system to SAP FI-AA for depreciation calculation and financial reporting.",
+    "deployedTo": ["SLB-BW-Finance-PROD"],
+    "lastModified": "2024-07-25T07:00:00Z",
     "activities": [
-      {"type":"FilePoller","label":"Poll POS SFTP Inbox","config":"SFTP /pos/transactions/*.xml"},
-      {"type":"FileRead","label":"Read POS Transaction File"},
-      {"type":"Mapper","label":"Parse POS XML to Internal Format","xslt":true},
-      {"type":"Decision","label":"Validate Transaction Records"},
-      {"type":"Mapper","label":"Map to SAP FI Journal","xslt":false},
-      {"type":"HTTPRequest","label":"Post Journal to SAP FI","endpoint":"SAP RFC Z_FI_POST_POS"},
-      {"type":"JDBCInsert","label":"Log Processed File","table":"POS_FILE_LOG","operation":"INSERT"},
-      {"type":"FileWrite","label":"Move File to Processed Archive"}
+      {"type":"TimerTrigger","label":"Monthly Asset Run","transport":"Timer"},
+      {"type":"JDBCQuery","label":"Get Asset Movements","transport":"JDBC"},
+      {"type":"Mapper","label":"Asset to SAP FI-AA Map","transport":"Internal"},
+      {"type":"RFCActivity","label":"Post to SAP FI-AA","transport":"RFC"},
+      {"type":"JDBCActivity","label":"Update Sync Log","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["SFTP_POS_Connection","HTTP_Client_SAP","JDBC_RetailCo_OPS"],
-    "connectorTypes": ["SFTP","HTTP","JDBC"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_AssetDB_JDBC"],
     "mappers": [
-      {"name":"POS_XML_to_Internal","type":"XSLT","fields":31,"hasCustomXPath":true},
-      {"name":"Internal_to_SAP_FI_Journal","type":"BW Mapper","fields":23},
-      {"name":"FileLogMapper","type":"BW Mapper","fields":8}
-    ],
-    "scripts": [
-      {"language":"Java","name":"POSTransactionValidator","purpose":"Validates transaction totals, cash drawer balances, and detects missing transactions"}
-    ],
-    "errorHandling": {"type":"try_catch","hasTimeout":false,"hasFaultHandler":true},
-    "dependencies": ["POS_Common.bwlib","FIN_Common.bwlib"],
-    "iflowAdapters": ["SFTP Sender Adapter","HTTPS Receiver (SAP RFC)","JDBC Adapter","SFTP Adapter (Archive)"]
-  },
-  "Supplier_EDI_Processing": {
-    "platformId": "tibco-p4-Supplier_EDI_Processing",
-    "projectPath": "/RetailCo/EXT/SupplierEDI",
-    "description": "Complex supplier EDI processing — inbound 850 PO from retailers, processes through SAP MM, generates 855/856 responses, handles exceptions.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-12-01T09:00:00Z",
-    "activities": [
-      {"type":"AS2Receive","label":"Receive 850 PO via AS2"},
-      {"type":"Mapper","label":"Parse EDI 850 X12","xslt":true},
-      {"type":"JDBCQuery","label":"Lookup Trading Partner Profile","table":"EDI_PARTNER_CONFIG","operation":"SELECT"},
-      {"type":"Decision","label":"Valid Trading Partner?"},
-      {"type":"Mapper","label":"Map 850 to SAP ORDERS05 IDoc","xslt":true},
-      {"type":"HTTPRequest","label":"Post ORDERS05 IDoc to SAP","endpoint":"SAP IDoc REST"},
-      {"type":"Decision","label":"SAP Posted Successfully?"},
-      {"type":"Mapper","label":"Build 855 PO Acknowledgement","xslt":true},
-      {"type":"AS2Send","label":"Send 855 Acknowledgement"},
-      {"type":"Mapper","label":"Build EDI 997 FA"},
-      {"type":"AS2Send","label":"Send 997 Functional Ack"},
-      {"type":"JDBCInsert","label":"Log EDI Transaction","table":"EDI_TRANSACTION_LOG","operation":"INSERT"},
-      {"type":"FileWrite","label":"Archive Original EDI File"}
-    ],
-    "sharedResources": ["AS2_Supplier_Connection","HTTP_Client_SAP","JDBC_RetailCo_EDI"],
-    "connectorTypes": ["AS2","HTTP","JDBC"],
-    "mappers": [
-      {"name":"EDI850_Parser","type":"XSLT","fields":58,"hasCustomXPath":true},
-      {"name":"EDI850_to_ORDERS05","type":"XSLT","fields":64,"hasCustomXPath":true},
-      {"name":"SAP_to_EDI855","type":"XSLT","fields":41},
-      {"name":"EDI997_Builder","type":"XSLT","fields":14},
-      {"name":"ArchiveMetadata_Builder","type":"BW Mapper","fields":8}
-    ],
-    "scripts": [
-      {"language":"Java","name":"EDIDuplicateChecker","purpose":"Validates ISA control number uniqueness within 30-day dedup window"},
-      {"language":"Java","name":"PartnerProfileResolver","purpose":"Resolves trading partner EDI settings from multi-level config hierarchy"},
-      {"language":"Java","name":"EDIValidator","purpose":"Validates EDI 850 segment structure, mandatory fields, and code list values"}
-    ],
-    "errorHandling": {"type":"multi_try_catch","hasTimeout":true,"timeoutSeconds":60,"hasFaultHandler":true,"hasDLQ":true},
-    "dependencies": ["EDI_Common.bwlib","AS2_Library","SAP_IDoc_Library","SCM_Common.bwlib"],
-    "iflowAdapters": ["AS2 Sender Adapter","HTTPS Receiver (SAP IDoc)","AS2 Receiver Adapter","JDBC Adapter","SFTP Adapter (Archive)"]
-  },
-  "Store_Replenishment_API": {
-    "platformId": "tibco-p4-Store_Replenishment_API",
-    "projectPath": "/RetailCo/SCM/StoreReplenishment",
-    "description": "REST API endpoint for store managers to request stock replenishment, which creates a SAP PR (Purchase Requisition).",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-10-25T11:00:00Z",
-    "activities": [
-      {"type":"Receive","label":"POST /stores/{storeId}/replenish","transport":"HTTP"},
-      {"type":"JDBCQuery","label":"Validate Store Code","table":"STORE_MASTER","operation":"SELECT"},
-      {"type":"Mapper","label":"Map to SAP PR Format","xslt":false},
-      {"type":"HTTPRequest","label":"Create SAP Purchase Requisition","endpoint":"SAP RFC BAPI_REQUISITION_CREATE"},
-      {"type":"Mapper","label":"Map SAP Response","xslt":false},
-      {"type":"Reply","label":"Return PR Number"}
-    ],
-    "sharedResources": ["HTTP_Client_SAP","JDBC_RetailCo_Stores"],
-    "connectorTypes": ["HTTP","JDBC"],
-    "mappers": [
-      {"name":"ReplenishRequest_to_SAP_PR","type":"BW Mapper","fields":18},
-      {"name":"SAP_PR_Response_Mapper","type":"BW Mapper","fields":9}
+      {"name":"AssetAdditionMapper","type":"BW Mapper","fields":["AssetClass","Description","CostCentre","WBSElement","AcquisitionDate","Amount","DepreciationKey","UsefulLife"],"hasCustomXPath":false},
+      {"name":"AssetDisposalMapper","type":"BW Mapper","fields":["AssetNumber","DisposalDate","Proceeds","DisposalType"],"hasCustomXPath":false}
     ],
     "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":true,"timeoutSeconds":15,"hasFaultHandler":false},
-    "dependencies": ["SCM_Common.bwlib"],
-    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (SAP RFC)","JDBC Adapter"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_FI_AA","SLB_AssetDB"],
+    "iflowAdapters": ["Timer Sender Adapter","JDBC Adapter","RFC Adapter (SAP S/4HANA)"]
   },
-  "Price_Update_Broadcast": {
-    "platformId": "tibco-p4-Price_Update_Broadcast",
-    "projectPath": "/RetailCo/SCM/PriceManagement",
-    "description": "JMS consumer for SAP pricing condition change events — broadcasts price updates to POS terminals and e-commerce.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-10-10T12:00:00Z",
+  "Tax_Compliance_Reporting_SFTP": {
+    "platformId": "tibco-slb-tax-007",
+    "projectPath": "/SLB/Finance/Tax",
+    "description": "Generate and transmit tax compliance reports for multiple jurisdictions from SAP FI to tax authorities via SFTP, supporting VAT, WHT, and country-specific formats.",
+    "deployedTo": ["SLB-BW-Finance-PROD"],
+    "lastModified": "2024-09-10T08:00:00Z",
     "activities": [
-      {"type":"JMSReceive","label":"Consume pricing.changes Queue"},
-      {"type":"Mapper","label":"Parse Pricing Event","xslt":false},
-      {"type":"JMSPublish","label":"Broadcast to pos.price-updates Topic"},
-      {"type":"HTTPRequest","label":"Update eCommerce Pricing API","endpoint":"eCommerce API /pricing/update"}
+      {"type":"TimerTrigger","label":"Periodic Tax Run","transport":"Timer"},
+      {"type":"RFCActivity","label":"Extract SAP Tax Data","transport":"RFC"},
+      {"type":"Mapper","label":"Tax Format Transform","transport":"Internal"},
+      {"type":"JavaActivity","label":"Country Format Builder","transport":"Internal"},
+      {"type":"SFTPSend","label":"Submit to Authority","transport":"SFTP"},
+      {"type":"JDBCActivity","label":"Log Submission","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["TIBCO_EMS_Connection","HTTP_Client_eCommerce"],
-    "connectorTypes": ["JMS","HTTP"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_TaxDB_JDBC","SLB_TaxAuthority_SFTP"],
     "mappers": [
-      {"name":"PricingEventParser","type":"BW Mapper","fields":12}
+      {"name":"TaxDataExtractMapper","type":"XSLT","fields":["TaxCode","TaxBase","TaxAmount","CompanyCode","FiscalPeriod","Country"],"hasCustomXPath":true},
+      {"name":"JurisdictionFormatMapper","type":"XSLT","fields":["CountryCode","TaxType","ReportingFormat","SubmissionDeadline"],"hasCustomXPath":true},
+      {"name":"SubmissionLogMapper","type":"BW Mapper","fields":["SubmissionID","Status","Timestamp","AuthorityReference"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"CountryTaxFormatter","language":"java","purpose":"Build country-specific tax report formats for 15+ jurisdictions where SLB operates"}
+    ],
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_FI_TaxData","SLB_TaxAuthorityPortals","TaxComplianceDB"],
+    "iflowAdapters": ["Timer Sender Adapter","RFC Adapter (SAP S/4HANA)","SFTP Receiver Adapter","JDBC Adapter"]
+  },
+  "Workforce_Onboarding_Integration": {
+    "platformId": "tibco-slb-onboarding-008",
+    "projectPath": "/SLB/HR/Onboarding",
+    "description": "End-to-end employee onboarding integration from SAP SuccessFactors to SAP HCM, provisioning IT access, rig safety training enrollment, and equipment assignment.",
+    "deployedTo": ["SLB-BW-HR-PROD"],
+    "lastModified": "2024-10-01T08:00:00Z",
+    "activities": [
+      {"type":"HTTPListener","label":"SF Hire Event","transport":"HTTP"},
+      {"type":"Mapper","label":"SF Employee to SAP HCM","transport":"Internal"},
+      {"type":"JavaActivity","label":"Generate Personnel Number","transport":"Internal"},
+      {"type":"RFCActivity","label":"Create SAP HCM Record","transport":"RFC"},
+      {"type":"HTTPActivity","label":"Provision IT Access","transport":"HTTP"},
+      {"type":"HTTPActivity","label":"Enrol Safety Training","transport":"HTTP"},
+      {"type":"JDBCActivity","label":"Log Onboarding","transport":"JDBC"},
+      {"type":"SMTPActivity","label":"Welcome Notification","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_HR_HTTP","SLB_ITProvisioning_HTTP","SLB_Training_HTTP","SLB_SMTP_Conn","SLB_HRDB_JDBC"],
+    "mappers": [
+      {"name":"SFtoHCMMapper","type":"XSLT","fields":["EmployeeID","FirstName","LastName","JobCode","Department","CostCentre","Manager","StartDate","Country","WorkLocation"],"hasCustomXPath":true},
+      {"name":"ITProvisioningMapper","type":"BW Mapper","fields":["EmployeeID","RoleProfile","SystemAccess","LocationCode","ContractType"],"hasCustomXPath":false},
+      {"name":"TrainingEnrollmentMapper","type":"BW Mapper","fields":["EmployeeID","JobCategory","RequiredCertifications","EnrollmentDeadline"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"PersonnelNumberGenerator","language":"java","purpose":"Generate SAP personnel numbers following SLB numbering convention by country and entity"},
+      {"name":"RoleProfileDeterminator","language":"java","purpose":"Determine IT access role profile based on job code, country, and business unit"}
+    ],
+    "errorHandling": {"type":"try_catch","alertEmail":"hr-ops@slb.com"},
+    "dependencies": ["SAP_HCM_Employee","SLB_SF_API","SLB_ITProvisioning","SLB_TrainingPortal","HRDB"],
+    "iflowAdapters": ["HTTPS Sender Adapter","RFC Adapter (SAP S/4HANA)","HTTP Receiver Adapter","Mail Adapter","JDBC Adapter"]
+  },
+  "Leave_Absence_Management_Sync": {
+    "platformId": "tibco-slb-leave-009",
+    "projectPath": "/SLB/HR/Leave",
+    "description": "Synchronise leave and absence requests between SAP SuccessFactors Time and SAP HCM, including offshore rotation leave for rig crew.",
+    "deployedTo": ["SLB-BW-HR-PROD"],
+    "lastModified": "2024-08-05T09:00:00Z",
+    "activities": [
+      {"type":"JMSListener","label":"SF Leave Event","transport":"JMS"},
+      {"type":"Mapper","label":"Leave Request Map","transport":"Internal"},
+      {"type":"RFCActivity","label":"Post SAP HCM Absence","transport":"RFC"},
+      {"type":"SMTPActivity","label":"Notify Manager","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_JMS_Conn","SLB_SMTP_Conn"],
+    "mappers": [
+      {"name":"LeaveRequestMapper","type":"BW Mapper","fields":["EmployeeID","AbsenceType","StartDate","EndDate","ApprovalStatus","RotationCode"],"hasCustomXPath":false}
     ],
     "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["SCM_Common.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","JMS Receiver Adapter","HTTPS Receiver (eCommerce)"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_HCM_Absence","SLB_SF_TimeOff"],
+    "iflowAdapters": ["JMS Sender Adapter","RFC Adapter (SAP S/4HANA)","Mail Adapter"]
   },
-  "Customer_Returns_Process": {
-    "platformId": "tibco-p4-Customer_Returns_Process",
-    "projectPath": "/RetailCo/CRM/Returns",
-    "description": "Returns processing API — creates SAP SD return order from store system request and initiates refund workflow.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-18T14:00:00Z",
+  "Payroll_Delta_SF_SAP_PY": {
+    "platformId": "tibco-slb-payroll-010",
+    "projectPath": "/SLB/HR/Payroll",
+    "description": "Payroll delta processing from SAP SuccessFactors Employee Central to SAP HCM Payroll, handling multi-country payroll with hazard pay, offshore allowances, and COLA adjustments.",
+    "deployedTo": ["SLB-BW-HR-PROD","SLB-BW-HR-DR"],
+    "lastModified": "2024-10-10T05:00:00Z",
     "activities": [
-      {"type":"Receive","label":"POST /returns/initiate","transport":"HTTP"},
-      {"type":"JDBCQuery","label":"Validate Original Order","table":"ORDERS","operation":"SELECT"},
-      {"type":"Mapper","label":"Map to SAP Return Order","xslt":false},
-      {"type":"HTTPRequest","label":"Create SAP SD Return Order","endpoint":"SAP RFC BAPI_SALESORDER_CREATEFROMDAT2"},
-      {"type":"Decision","label":"Return Authorized?"},
-      {"type":"HTTPRequest","label":"Initiate Refund","endpoint":"Payment API /refunds"},
-      {"type":"JDBCUpdate","label":"Update Order with RMA Number","table":"ORDERS","operation":"UPDATE"},
-      {"type":"Reply","label":"Return RMA Confirmation"}
+      {"type":"TimerTrigger","label":"Payroll Cutoff Schedule","transport":"Timer"},
+      {"type":"HTTPActivity","label":"Get SF Payroll Delta","transport":"HTTP"},
+      {"type":"JavaActivity","label":"Calculate Allowances","transport":"Internal"},
+      {"type":"Mapper","label":"Payroll Data Transform","transport":"Internal"},
+      {"type":"Mapper","label":"Tax Withholding Map","transport":"Internal"},
+      {"type":"RFCActivity","label":"Post SAP HCM Payroll","transport":"RFC"},
+      {"type":"JDBCActivity","label":"Audit Log","transport":"JDBC"},
+      {"type":"SFTPSend","label":"Payroll Extract Archive","transport":"SFTP"},
+      {"type":"SMTPActivity","label":"Payroll Summary Notify","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["HTTP_Client_SAP","HTTP_Client_PaymentGW","JDBC_RetailCo_OMS"],
-    "connectorTypes": ["HTTP","JDBC"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_SF_HTTP","SLB_PayrollDB_JDBC","SLB_SFTP_PayrollConn","SLB_SMTP_Conn"],
     "mappers": [
-      {"name":"ReturnRequest_to_SAP_Return","type":"BW Mapper","fields":21},
-      {"name":"SAP_Response_to_RMA","type":"BW Mapper","fields":11}
+      {"name":"PayrollDeltaMapper","type":"XSLT","fields":["EmployeeID","PayrollArea","WageType","Amount","Currency","ValidFrom","ValidTo","CostCentre"],"hasCustomXPath":true},
+      {"name":"AllowanceCalculationMapper","type":"XSLT","fields":["HazardPayRate","OffshoreAllowance","COLAIndex","RotationBonus","CurrencyConversion"],"hasCustomXPath":true},
+      {"name":"TaxWithholdingMapper","type":"BW Mapper","fields":["TaxResidence","GrossIncome","TaxCategory","WithholdingRate","SocialContributions"],"hasCustomXPath":false},
+      {"name":"PayrollArchiveMapper","type":"BW Mapper","fields":["PayrollPeriod","EmployeeCount","TotalGross","TotalNet","RunStatus"],"hasCustomXPath":false},
+      {"name":"SAPPayrollWageTypeMapper","type":"XSLT","fields":["WageType","OperationType","Amount","Number","Unit"],"hasCustomXPath":true}
     ],
     "scripts": [
-      {"language":"Java","name":"ReturnPolicyValidator","purpose":"Validates return against product return policy, time window, and receipt validation"}
+      {"name":"OffshoreAllowanceCalculator","language":"java","purpose":"Calculate offshore rotation allowances, hazard pay, and living-out allowances by location"},
+      {"name":"MultiCountryTaxProcessor","language":"java","purpose":"Apply correct tax withholding rules for 40+ countries where SLB employs staff"},
+      {"name":"PayrollAuditTrailBuilder","language":"java","purpose":"Build immutable payroll audit trail for SOX compliance and regulatory requirements"}
     ],
-    "errorHandling": {"type":"basic","hasTimeout":true,"timeoutSeconds":20,"hasFaultHandler":false},
-    "dependencies": ["CRM_Common.bwlib","Payment_Library.bwlib"],
-    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (SAP SD)","HTTPS Receiver (Payment API)","JDBC Adapter"]
+    "errorHandling": {"type":"multi_try_catch","retryCount":3,"deadLetterQueue":"slb-payroll-dlq","alertEmail":"payroll@slb.com"},
+    "dependencies": ["SAP_HCM_Payroll","SLB_SF_EC","SLB_TaxEngine","PayrollAuditDB","PayrollArchiveSFTP"],
+    "iflowAdapters": ["Timer Sender Adapter","HTTP Receiver Adapter","RFC Adapter (SAP S/4HANA)","SFTP Receiver Adapter","Mail Adapter","JDBC Adapter"]
   },
-  "Finance_GL_Interface": {
-    "platformId": "tibco-p4-Finance_GL_Interface",
-    "projectPath": "/RetailCo/FIN/GLPosting",
-    "description": "Scheduled end-of-day GL posting batch — aggregates store-level sales and cash transactions and posts to SAP FI.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-28T22:00:00Z",
+  "Training_Certification_Track": {
+    "platformId": "tibco-slb-training-011",
+    "projectPath": "/SLB/HR/Training",
+    "description": "Track mandatory safety training and professional certifications for SLB rig crews and field engineers, syncing completions from LMS to SAP HCM qualifications.",
+    "deployedTo": ["SLB-BW-HR-PROD"],
+    "lastModified": "2024-07-20T09:00:00Z",
     "activities": [
-      {"type":"Timer","label":"Schedule End of Day 10PM","config":"0 22 * * *"},
-      {"type":"JDBCQuery","label":"Aggregate Store Transactions","table":"POS_TRANSACTIONS","operation":"SELECT + GROUP"},
-      {"type":"Mapper","label":"Map to SAP FI GL Journal XSLT","xslt":true},
-      {"type":"Decision","label":"Journal Balance Check"},
-      {"type":"HTTPRequest","label":"Post GL Journal to SAP FI","endpoint":"SAP RFC BAPI_ACC_GL_POSTING_POST"},
-      {"type":"JDBCUpdate","label":"Mark Transactions as Posted","table":"POS_TRANSACTIONS","operation":"UPDATE"},
-      {"type":"JDBCInsert","label":"Log GL Posting Batch","table":"GL_POSTING_LOG","operation":"INSERT"}
+      {"type":"TimerTrigger","label":"Daily Sync","transport":"Timer"},
+      {"type":"HTTPActivity","label":"Get LMS Completions","transport":"HTTP"},
+      {"type":"Mapper","label":"Cert Completion Map","transport":"Internal"},
+      {"type":"RFCActivity","label":"Update SAP Qualifications","transport":"RFC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["HTTP_Client_SAP","JDBC_RetailCo_POS","JDBC_RetailCo_GL"],
-    "connectorTypes": ["HTTP","JDBC"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_LMS_HTTP"],
     "mappers": [
-      {"name":"POS_Aggregate_to_GL_Journal","type":"XSLT","fields":28,"hasCustomXPath":true},
-      {"name":"BalanceValidation_Mapper","type":"BW Mapper","fields":9},
-      {"name":"PostingLog_Mapper","type":"BW Mapper","fields":11}
-    ],
-    "scripts": [
-      {"language":"Java","name":"JournalBalanceValidator","purpose":"Validates debit/credit balance of journal entries before SAP posting"}
-    ],
-    "errorHandling": {"type":"try_catch","hasTimeout":true,"timeoutSeconds":120,"hasFaultHandler":true},
-    "dependencies": ["FIN_Common.bwlib","SAP_RFC_Library"],
-    "iflowAdapters": ["Timer Start Event","JDBC Adapter","HTTPS Receiver (SAP FI)"]
-  },
-  "Loyalty_Points_Calc": {
-    "platformId": "tibco-p4-Loyalty_Points_Calc",
-    "projectPath": "/RetailCo/CRM/LoyaltyPoints",
-    "description": "Event-driven loyalty points calculation on purchase events from POS system.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-05T10:00:00Z",
-    "activities": [
-      {"type":"JMSReceive","label":"Consume purchase.completed Queue"},
-      {"type":"JDBCQuery","label":"Get Customer Tier & Multiplier","table":"LOYALTY_TIERS","operation":"SELECT"},
-      {"type":"Mapper","label":"Calculate Points Earned","xslt":false},
-      {"type":"JDBCUpdate","label":"Update Loyalty Balance","table":"LOYALTY_ACCOUNTS","operation":"UPDATE"},
-      {"type":"Decision","label":"Tier Upgrade Check?"},
-      {"type":"JMSPublish","label":"Publish loyalty.points.earned Event"},
-      {"type":"JDBCInsert","label":"Log Points Transaction","table":"LOYALTY_TRANSACTIONS","operation":"INSERT"}
-    ],
-    "sharedResources": ["TIBCO_EMS_Connection","JDBC_RetailCo_Loyalty"],
-    "connectorTypes": ["JMS","JDBC"],
-    "mappers": [
-      {"name":"PointsCalculationMapper","type":"BW Mapper","fields":14},
-      {"name":"TierCheckMapper","type":"BW Mapper","fields":8}
-    ],
-    "scripts": [
-      {"language":"Java","name":"PointsMultiplierEngine","purpose":"Applies product category multipliers, promotional bonus rules, and partner earn rates"}
-    ],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["CRM_Common.bwlib","Loyalty_Calculations.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","JMS Receiver Adapter","JDBC Adapter"]
-  },
-  "Warehouse_Pick_Ticket": {
-    "platformId": "tibco-p4-Warehouse_Pick_Ticket",
-    "projectPath": "/RetailCo/SCM/WarehousePick",
-    "description": "JMS event consumer for warehouse pick ticket generation when orders are released in OMS.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-10-20T09:00:00Z",
-    "activities": [
-      {"type":"JMSReceive","label":"Consume order.released Queue"},
-      {"type":"Mapper","label":"Map to Pick Ticket Format","xslt":false},
-      {"type":"JMSPublish","label":"Publish to wms.pick-tickets Queue"},
-      {"type":"JDBCUpdate","label":"Update Order Pick Status","table":"ORDERS","operation":"UPDATE"},
-      {"type":"JMSPublish","label":"Publish to monitoring.events Queue"}
-    ],
-    "sharedResources": ["TIBCO_EMS_Connection","JDBC_RetailCo_OMS"],
-    "connectorTypes": ["JMS","JDBC"],
-    "mappers": [
-      {"name":"OrderToPickTicket","type":"BW Mapper","fields":17},
-      {"name":"MonitoringEventMapper","type":"BW Mapper","fields":6}
+      {"name":"TrainingCompletionMapper","type":"BW Mapper","fields":["EmployeeID","CourseID","CompletionDate","ExpiryDate","Score","CertificateNumber","QualificationType"],"hasCustomXPath":false}
     ],
     "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["SCM_Common.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","JMS Receiver Adapter","JDBC Adapter"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_HCM_Qualifications","SLB_LMS_API"],
+    "iflowAdapters": ["Timer Sender Adapter","HTTP Receiver Adapter","RFC Adapter (SAP S/4HANA)"]
   },
-  "Supplier_Invoice_Match": {
-    "platformId": "tibco-p4-Supplier_Invoice_Match",
-    "projectPath": "/RetailCo/FIN/SupplierInvoice",
-    "description": "SFTP-triggered supplier invoice matching — picks up supplier invoice files, performs 3-way match against SAP PO/GR, posts approved invoices.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-22T08:00:00Z",
+  "Org_Structure_Headcount_Publish": {
+    "platformId": "tibco-slb-org-structure-012",
+    "projectPath": "/SLB/HR/OrgData",
+    "description": "Publish SAP SuccessFactors organisation structure and headcount data to management dashboards, workforce planning tools, and downstream HR systems.",
+    "deployedTo": ["SLB-BW-HR-PROD"],
+    "lastModified": "2024-08-28T07:00:00Z",
     "activities": [
-      {"type":"FilePoller","label":"Poll Supplier Invoice SFTP","config":"SFTP /invoices/inbound/*.xml"},
-      {"type":"Mapper","label":"Parse Invoice XML","xslt":true},
-      {"type":"JDBCQuery","label":"Lookup PO and GR Data","table":"SAP_EKKO_EKPO","operation":"SELECT"},
-      {"type":"Mapper","label":"Three-Way Match Logic","xslt":false},
-      {"type":"Decision","label":"Match Within Tolerance?"},
-      {"type":"HTTPRequest","label":"Post Invoice to SAP FI","endpoint":"SAP RFC BAPI_INCOMINGINVOICE_CREATE"},
-      {"type":"JDBCInsert","label":"Log Invoice Processing","table":"INVOICE_LOG","operation":"INSERT"},
-      {"type":"FileWrite","label":"Move to Processed / Exception Folder"}
+      {"type":"TimerTrigger","label":"Weekly Publish","transport":"Timer"},
+      {"type":"HTTPActivity","label":"Get SF Org Data","transport":"HTTP"},
+      {"type":"Mapper","label":"Org Structure Transform","transport":"Internal"},
+      {"type":"JavaActivity","label":"Headcount Aggregation","transport":"Internal"},
+      {"type":"HTTPActivity","label":"Post to Dashboard","transport":"HTTP"},
+      {"type":"JDBCActivity","label":"Update Headcount DB","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["SFTP_Supplier_Connection","HTTP_Client_SAP","JDBC_RetailCo_FIN"],
-    "connectorTypes": ["SFTP","HTTP","JDBC"],
+    "sharedResources": ["SLB_SF_HTTP","SLB_Dashboard_HTTP","SLB_HRDB_JDBC"],
     "mappers": [
-      {"name":"SupplierInvoice_XML_Parser","type":"XSLT","fields":36,"hasCustomXPath":true},
-      {"name":"ThreeWayMatchMapper","type":"BW Mapper","fields":22},
-      {"name":"SAP_InvoicePost_Mapper","type":"BW Mapper","fields":18}
+      {"name":"OrgStructureMapper","type":"BW Mapper","fields":["OrgUnitID","OrgUnitName","ParentOrgUnit","Manager","CostCentre","Country","BusinessUnit"],"hasCustomXPath":false},
+      {"name":"HeadcountMapper","type":"XSLT","fields":["OrgUnit","ContractType","Location","Gender","Grade","TotalHeadcount"],"hasCustomXPath":true}
     ],
     "scripts": [
-      {"language":"Java","name":"ThreeWayMatchEngine","purpose":"Compares invoice amount, quantity, and price against PO and GR within configurable tolerance bands"},
-      {"language":"Java","name":"ExceptionClassifier","purpose":"Classifies invoice exceptions by type (price, quantity, missing GR) and routes to correct AP worklist"}
+      {"name":"HeadcountAggregator","language":"java","purpose":"Aggregate headcount by org unit, location, contract type, and grade band"}
     ],
-    "errorHandling": {"type":"try_catch","hasTimeout":false,"hasFaultHandler":true},
-    "dependencies": ["FIN_Common.bwlib","SAP_RFC_Library","Invoice_Matching.bwlib"],
-    "iflowAdapters": ["SFTP Sender Adapter","HTTPS Receiver (SAP FI)","JDBC Adapter","SFTP Adapter (Archive)"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SLB_SF_OrgAPI","SLB_WorkforceDashboard","HRDB"],
+    "iflowAdapters": ["Timer Sender Adapter","HTTP Receiver Adapter","HTTP Receiver Adapter","JDBC Adapter"]
   },
-  "Campaign_Trigger_Event": {
-    "platformId": "tibco-p4-Campaign_Trigger_Event",
-    "projectPath": "/RetailCo/CRM/Campaigns",
-    "description": "JMS consumer for customer segment events that triggers marketing campaign execution in CRM.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-10-05T10:00:00Z",
+  "Procurement_PO_Ariba_SAP_Sync": {
+    "platformId": "tibco-slb-procurement-013",
+    "projectPath": "/SLB/Procurement/PO",
+    "description": "Synchronise purchase orders between SAP Ariba sourcing and SAP MM procurement, including contract compliance checks and supplier confirmation handling.",
+    "deployedTo": ["SLB-BW-Procurement-PROD"],
+    "lastModified": "2024-09-28T08:00:00Z",
     "activities": [
-      {"type":"JMSReceive","label":"Consume segment.matched Queue"},
-      {"type":"Mapper","label":"Map to Campaign Trigger","xslt":false},
-      {"type":"HTTPRequest","label":"Trigger Campaign in CRM","endpoint":"CRM API /campaigns/trigger"},
-      {"type":"JMSPublish","label":"Publish campaign.triggered Event"}
+      {"type":"JMSListener","label":"Ariba PO Event","transport":"JMS"},
+      {"type":"Mapper","label":"Ariba to SAP MM Map","transport":"Internal"},
+      {"type":"JavaActivity","label":"Contract Compliance Check","transport":"Internal"},
+      {"type":"RFCActivity","label":"Create SAP MM PO","transport":"RFC"},
+      {"type":"HTTPActivity","label":"Confirm to Ariba","transport":"HTTP"},
+      {"type":"JDBCActivity","label":"Log PO","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["TIBCO_EMS_Connection","HTTP_Client_CRM"],
-    "connectorTypes": ["JMS","HTTP"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_Ariba_HTTP","SLB_ProcDB_JDBC","SLB_JMS_Conn"],
     "mappers": [
-      {"name":"SegmentToCampaignMapper","type":"BW Mapper","fields":11}
+      {"name":"AribaToSAPPOMapper","type":"XSLT","fields":["PONumber","VendorNumber","MaterialNumber","Quantity","UoM","Price","Currency","DeliveryDate","PlantCode","StorageLocation"],"hasCustomXPath":true},
+      {"name":"ContractComplianceMapper","type":"BW Mapper","fields":["ContractNumber","ValidFrom","ValidTo","FrameworkAgreement","PricingCondition"],"hasCustomXPath":false},
+      {"name":"AribaConfirmationMapper","type":"BW Mapper","fields":["PONumber","SAPDocumentNumber","PostingDate","Status"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"ContractComplianceChecker","language":"java","purpose":"Verify PO adheres to active framework agreements and preferred supplier contracts"}
+    ],
+    "errorHandling": {"type":"try_catch","retryCount":2},
+    "dependencies": ["SAP_MM_PO","SAP_Ariba_API","SLB_ContractDB","ProcurementDB"],
+    "iflowAdapters": ["JMS Sender Adapter","RFC Adapter (SAP S/4HANA)","Ariba Adapter","JDBC Adapter"]
+  },
+  "Supplier_Master_Data_Dist": {
+    "platformId": "tibco-slb-supplier-master-014",
+    "projectPath": "/SLB/Procurement/Master",
+    "description": "Distribute approved supplier master data from SAP Ariba supplier lifecycle management to SAP MM vendor master across all SLB company codes.",
+    "deployedTo": ["SLB-BW-Procurement-PROD"],
+    "lastModified": "2024-07-15T07:00:00Z",
+    "activities": [
+      {"type":"HTTPListener","label":"Ariba Supplier Approval","transport":"HTTP"},
+      {"type":"Mapper","label":"Supplier to Vendor Map","transport":"Internal"},
+      {"type":"RFCActivity","label":"Create SAP Vendor","transport":"RFC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_Ariba_HTTP"],
+    "mappers": [
+      {"name":"SupplierToVendorMapper","type":"BW Mapper","fields":["SupplierID","VendorName","AddressData","TaxNumber","BankDetails","PaymentTerms","PurchasingOrg","CompanyCode"],"hasCustomXPath":false}
     ],
     "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["CRM_Common.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","HTTPS Receiver (CRM API)","JMS Receiver Adapter"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_MM_VendorMaster","SAP_Ariba_SLM"],
+    "iflowAdapters": ["HTTPS Sender Adapter","RFC Adapter (SAP S/4HANA)"]
   },
-  "Stock_Count_Reconcile": {
-    "platformId": "tibco-p4-Stock_Count_Reconcile",
-    "projectPath": "/RetailCo/SCM/StockCount",
-    "description": "Scheduled stock count reconciliation — compares physical count uploads from stores with SAP inventory and generates variance report.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-15T06:00:00Z",
+  "Contract_Lifecycle_SAP_Sync": {
+    "platformId": "tibco-slb-contract-015",
+    "projectPath": "/SLB/Procurement/Contracts",
+    "description": "Synchronise contract lifecycle events from SAP Ariba contracts to SAP MM outline agreements and SAP PS project contracts.",
+    "deployedTo": ["SLB-BW-Procurement-PROD"],
+    "lastModified": "2024-08-20T09:00:00Z",
     "activities": [
-      {"type":"Timer","label":"Schedule Weekly Sunday Night","config":"0 23 * * 0"},
-      {"type":"JDBCQuery","label":"Get Physical Count Uploads","table":"STOCK_COUNT_STAGING","operation":"SELECT"},
-      {"type":"JDBCQuery","label":"Get SAP System Inventory","table":"MARD_SAP_VIEW","operation":"SELECT"},
-      {"type":"Mapper","label":"Calculate Variances","xslt":false},
-      {"type":"Decision","label":"Variance Above Threshold?"},
-      {"type":"HTTPRequest","label":"Post Recount Request to Store Portal","endpoint":"Store Portal API /recount"},
-      {"type":"JDBCUpdate","label":"Update Reconciliation Status","table":"STOCK_RECONCILE_LOG","operation":"UPDATE"}
+      {"type":"TimerTrigger","label":"Daily Contract Sync","transport":"Timer"},
+      {"type":"HTTPActivity","label":"Get Ariba Contracts","transport":"HTTP"},
+      {"type":"Mapper","label":"Contract to SAP Map","transport":"Internal"},
+      {"type":"JavaActivity","label":"Determine Contract Type","transport":"Internal"},
+      {"type":"RFCActivity","label":"Create Outline Agreement","transport":"RFC"},
+      {"type":"JDBCActivity","label":"Update Contract Log","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["JDBC_RetailCo_Inventory","HTTP_Client_StorePortal"],
-    "connectorTypes": ["JDBC","HTTP"],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_Ariba_HTTP","SLB_ProcDB_JDBC"],
     "mappers": [
-      {"name":"VarianceCalculator","type":"BW Mapper","fields":18},
-      {"name":"RecountRequestMapper","type":"BW Mapper","fields":12}
+      {"name":"ContractToSAPMapper","type":"XSLT","fields":["ContractNumber","VendorNumber","ValidFrom","ValidTo","ContractValue","Currency","TargetValue","PricingConditions","PaymentTerms"],"hasCustomXPath":true},
+      {"name":"ContractTypeMapper","type":"BW Mapper","fields":["AribaContractType","SAPAgreementType","PurchasingOrg","DocumentType"],"hasCustomXPath":false}
     ],
     "scripts": [
-      {"language":"Java","name":"VarianceThresholdEvaluator","purpose":"Applies category-specific variance thresholds (% and absolute amount) to flag significant discrepancies"}
+      {"name":"ContractTypeResolver","language":"java","purpose":"Map Ariba contract categories to correct SAP MM document types and purchasing organisations"}
     ],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["SCM_Common.bwlib"],
-    "iflowAdapters": ["Timer Start Event","JDBC Adapter","HTTPS Receiver (Store Portal)"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SAP_MM_OutlineAgreement","SAP_Ariba_Contracts","ContractDB"],
+    "iflowAdapters": ["Timer Sender Adapter","HTTP Receiver Adapter","RFC Adapter (SAP S/4HANA)","JDBC Adapter"]
   },
-  "Order_Status_Notification": {
-    "platformId": "tibco-p4-Order_Status_Notification",
-    "projectPath": "/RetailCo/SCM/OrderStatus",
-    "description": "Event consumer that sends order status email notifications to customers when order status changes.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-10-28T10:00:00Z",
+  "EDI_850_Supplier_PO_Outbound": {
+    "platformId": "tibco-slb-edi-850-016",
+    "projectPath": "/SLB/Procurement/EDI",
+    "description": "Outbound EDI 850 Purchase Order transmission to critical suppliers via AS2 for MRO materials, chemicals, and equipment parts.",
+    "deployedTo": ["SLB-BW-Procurement-PROD","SLB-BW-Procurement-DR"],
+    "lastModified": "2024-10-05T08:00:00Z",
     "activities": [
-      {"type":"JMSReceive","label":"Consume order.status.changed Queue"},
-      {"type":"Mapper","label":"Map to Email Template","xslt":false},
-      {"type":"SMTPSend","label":"Send Customer Email Notification"},
-      {"type":"JDBCInsert","label":"Log Notification Sent","table":"NOTIFICATION_LOG","operation":"INSERT"}
+      {"type":"JMSListener","label":"SAP PO IDoc","transport":"JMS"},
+      {"type":"JavaActivity","label":"IDoc to X12 Transform","transport":"Internal"},
+      {"type":"Mapper","label":"X12 850 Build","transport":"Internal"},
+      {"type":"JavaActivity","label":"EDI Envelope Builder","transport":"Internal"},
+      {"type":"Mapper","label":"Partner Routing","transport":"Internal"},
+      {"type":"AS2Send","label":"Transmit via AS2","transport":"AS2"},
+      {"type":"JDBCActivity","label":"Log EDI Transaction","transport":"JDBC"},
+      {"type":"SMTPActivity","label":"Alert on Failure","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["TIBCO_EMS_Connection","SMTP_RetailCo","JDBC_RetailCo_Notify"],
-    "connectorTypes": ["JMS","SMTP"],
+    "sharedResources": ["SLB_AS2_Conn","SLB_ProcDB_JDBC","SLB_SMTP_Conn","SLB_JMS_Conn"],
     "mappers": [
-      {"name":"OrderStatusToEmailTemplate","type":"BW Mapper","fields":14}
+      {"name":"IDOCtoX12Mapper","type":"XSLT","fields":["ISA_Segment","GS_Segment","BEG_Segment","DTM_Segment","N1_Segments","PO1_LineItems","CTT_Segment","SE_Segment"],"hasCustomXPath":true},
+      {"name":"EDIEnvelopeMapper","type":"XSLT","fields":["ISA01_AuthInfoQual","ISA06_SenderID","ISA08_ReceiverID","ISA09_Date","GS02_AppSenderCode","GS03_AppReceiverCode"],"hasCustomXPath":true},
+      {"name":"PartnerRoutingMapper","type":"BW Mapper","fields":["VendorNumber","AS2URL","AS2PartnerID","SigningCert","EncryptionCert"],"hasCustomXPath":false},
+      {"name":"X12LineItemMapper","type":"XSLT","fields":["POLineNumber","ItemCode","Quantity","UoM","UnitPrice","ShipDate","PlantCode"],"hasCustomXPath":true},
+      {"name":"EDIAckMapper","type":"BW Mapper","fields":["ICN","TransactionSetID","AckCode","NoteCode"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"X12850Builder","language":"java","purpose":"Build compliant X12 EDI 850 transaction sets with segment validation and ISA/GS envelope"},
+      {"name":"EDIPartnerConfigLoader","language":"java","purpose":"Load EDI partner configuration including AS2 URLs, certificates, and ISA identifiers"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","retryCount":3,"deadLetterQueue":"slb-edi-dlq","alertEmail":"edi-ops@slb.com"},
+    "dependencies": ["SLB_AS2_Gateway","SAP_MM_PO_IDoc","EDIPartnerDB","EDITransactionLog"],
+    "iflowAdapters": ["JMS Sender Adapter","AS2 Receiver Adapter","JDBC Adapter","Mail Adapter"]
+  },
+  "Logistics_Freight_Cost_Tracking": {
+    "platformId": "tibco-slb-freight-017",
+    "projectPath": "/SLB/Logistics/Freight",
+    "description": "Track freight costs from third-party logistics providers and post actual transportation costs to SAP CO cost centres for rig mobilisation and supply chain.",
+    "deployedTo": ["SLB-BW-Logistics-PROD"],
+    "lastModified": "2024-09-12T09:00:00Z",
+    "activities": [
+      {"type":"HTTPListener","label":"3PL Freight Invoice","transport":"HTTP"},
+      {"type":"Mapper","label":"Freight Cost Map","transport":"Internal"},
+      {"type":"JavaActivity","label":"Cost Allocation Logic","transport":"Internal"},
+      {"type":"RFCActivity","label":"Post to SAP CO","transport":"RFC"},
+      {"type":"JDBCActivity","label":"Update Freight Log","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_LogisticsDB_JDBC"],
+    "mappers": [
+      {"name":"FreightCostMapper","type":"BW Mapper","fields":["FreightInvoiceNo","CarrierID","Origin","Destination","Weight","Freight_Amount","Currency","ServiceType"],"hasCustomXPath":false},
+      {"name":"CostAllocationMapper","type":"XSLT","fields":["CostCentre","WBSElement","ProjectCode","GLAccount","Amount"],"hasCustomXPath":true},
+      {"name":"FreightLogMapper","type":"BW Mapper","fields":["ShipmentID","Status","ActualDelivery","Variance"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"FreightCostAllocator","language":"java","purpose":"Allocate freight costs to correct WBS elements and cost centres based on shipment destination"}
+    ],
+    "errorHandling": {"type":"try_catch","retryCount":2},
+    "dependencies": ["SAP_CO_Posting","SLB_3PL_API","LogisticsDB"],
+    "iflowAdapters": ["HTTPS Sender Adapter","RFC Adapter (SAP S/4HANA)","JDBC Adapter"]
+  },
+  "Customs_Clearance_Integration": {
+    "platformId": "tibco-slb-customs-018",
+    "projectPath": "/SLB/Logistics/Customs",
+    "description": "Integrate customs clearance status from freight forwarders with SAP MM goods receipt and SAP GTS global trade services for import compliance.",
+    "deployedTo": ["SLB-BW-Logistics-PROD"],
+    "lastModified": "2024-09-05T10:00:00Z",
+    "activities": [
+      {"type":"JMSListener","label":"Customs Status Event","transport":"JMS"},
+      {"type":"Mapper","label":"Customs to SAP GTS Map","transport":"Internal"},
+      {"type":"JavaActivity","label":"Compliance Check","transport":"Internal"},
+      {"type":"HTTPActivity","label":"Update GTS","transport":"HTTP"},
+      {"type":"RFCActivity","label":"Trigger GR if Cleared","transport":"RFC"},
+      {"type":"SMTPActivity","label":"Notify Logistics","transport":"SMTP"},
+      {"type":"JDBCActivity","label":"Log Status","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_GTS_HTTP","SLB_LogisticsDB_JDBC","SLB_JMS_Conn","SLB_SMTP_Conn"],
+    "mappers": [
+      {"name":"CustomsStatusMapper","type":"XSLT","fields":["ShipmentRef","CustomsDeclarationNo","ClearanceStatus","DutyAmount","ClearanceDate","HSCode"],"hasCustomXPath":true},
+      {"name":"GTSComplianceMapper","type":"BW Mapper","fields":["LicenseType","EmbargoCodes","DualUseFlag","CountryOfOrigin","ExportControl"],"hasCustomXPath":false},
+      {"name":"GRTriggerMapper","type":"BW Mapper","fields":["PurchaseOrderNo","DeliveryNote","QuantityCleared","PlantCode","StorageLocation"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"ExportControlChecker","language":"java","purpose":"Verify materials against SLB export control list and embargo country restrictions"},
+      {"name":"DutyCalculationValidator","language":"java","purpose":"Validate customs duty amounts against tariff schedule for audit purposes"}
+    ],
+    "errorHandling": {"type":"try_catch","retryCount":2},
+    "dependencies": ["SAP_GTS","SAP_MM_GR","SLB_FreightForwarder_API","CustomsDB"],
+    "iflowAdapters": ["JMS Sender Adapter","HTTP Receiver Adapter","RFC Adapter (SAP S/4HANA)","Mail Adapter","JDBC Adapter"]
+  },
+  "Rig_Mobilization_Logistics_Sync": {
+    "platformId": "tibco-slb-rig-mob-019",
+    "projectPath": "/SLB/Logistics/Mobilization",
+    "description": "Coordinate rig mobilisation logistics including equipment manifests, crew transport, and third-party equipment with SAP PS project planning and SAP PM equipment tracking.",
+    "deployedTo": ["SLB-BW-Logistics-PROD"],
+    "lastModified": "2024-09-18T08:00:00Z",
+    "activities": [
+      {"type":"HTTPListener","label":"Mobilization Order","transport":"HTTP"},
+      {"type":"Mapper","label":"Mob Plan to SAP PS Map","transport":"Internal"},
+      {"type":"JavaActivity","label":"Resource Availability Check","transport":"Internal"},
+      {"type":"RFCActivity","label":"Update SAP PS Activities","transport":"RFC"},
+      {"type":"RFCActivity","label":"Reserve SAP PM Equipment","transport":"RFC"},
+      {"type":"HTTPActivity","label":"Coordinate 3PL Transport","transport":"HTTP"},
+      {"type":"SMTPActivity","label":"Mob Status Notification","transport":"SMTP"},
+      {"type":"JDBCActivity","label":"Log Mobilization","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_SAP_RFC_Conn","SLB_3PL_HTTP","SLB_LogisticsDB_JDBC","SLB_SMTP_Conn"],
+    "mappers": [
+      {"name":"MobilizationPlanMapper","type":"XSLT","fields":["RigID","WellLocation","MobStartDate","MobEndDate","EquipmentList","CrewManifest","ThirdPartyItems"],"hasCustomXPath":true},
+      {"name":"PSActivityMapper","type":"BW Mapper","fields":["WBSElement","ActivityType","PlannedStart","PlannedFinish","ResourceList","CostPlan"],"hasCustomXPath":false},
+      {"name":"TransportCoordinationMapper","type":"BW Mapper","fields":["CargoManifest","ShipmentRoute","SpecialHandling","HazMatCode"],"hasCustomXPath":false}
+    ],
+    "scripts": [
+      {"name":"ResourceAvailabilityChecker","language":"java","purpose":"Check equipment and crew availability across SLB global fleet for mobilisation window"},
+      {"name":"MobCostEstimator","language":"java","purpose":"Estimate mobilisation costs from historical data and current rate cards for AFE preparation"}
+    ],
+    "errorHandling": {"type":"try_catch","retryCount":2},
+    "dependencies": ["SAP_PS_Activities","SAP_PM_Equipment","SLB_3PL_API","SLB_CrewDB","MobLogDB"],
+    "iflowAdapters": ["HTTPS Sender Adapter","RFC Adapter (SAP S/4HANA)","HTTP Receiver Adapter","Mail Adapter","JDBC Adapter"]
+  },
+  "Port_Demurrage_Alert_Flow": {
+    "platformId": "tibco-slb-demurrage-020",
+    "projectPath": "/SLB/Logistics/Ports",
+    "description": "Monitor vessel and cargo port dwell times, alert logistics team when approaching demurrage thresholds to avoid excess port charges.",
+    "deployedTo": ["SLB-BW-Logistics-PROD"],
+    "lastModified": "2024-07-18T09:00:00Z",
+    "activities": [
+      {"type":"TimerTrigger","label":"Port Check Schedule","transport":"Timer"},
+      {"type":"HTTPActivity","label":"Get Port Status","transport":"HTTP"},
+      {"type":"JavaActivity","label":"Demurrage Calc","transport":"Internal"},
+      {"type":"SMTPActivity","label":"Alert Logistics","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
+    ],
+    "sharedResources": ["SLB_PortSystem_HTTP","SLB_SMTP_Conn"],
+    "mappers": [
+      {"name":"DemurrageAlertMapper","type":"BW Mapper","fields":["VesselName","PortCode","ArrivalDate","FreeTimeExpiry","DemurrageRate","EstimatedCharges"],"hasCustomXPath":false}
     ],
     "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["CRM_Common.bwlib","Email_Templates.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","Mail Adapter","JDBC Adapter"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SLB_PortSystem_API","SLB_LogisticsTeam"],
+    "iflowAdapters": ["Timer Sender Adapter","HTTP Receiver Adapter","Mail Adapter"]
   },
-  "EDI_855_PO_Acknowledgement": {
-    "platformId": "tibco-p4-EDI_855_PO_Acknowledgement",
-    "projectPath": "/RetailCo/EXT/EDI855",
-    "description": "Outbound EDI 855 PO Acknowledgement generation from SAP SD order confirmation to retail trading partners via AS2.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-28T09:00:00Z",
+  "Operations_KPI_Dashboard_Feed": {
+    "platformId": "tibco-slb-kpi-021",
+    "projectPath": "/SLB/Reporting/KPI",
+    "description": "Feed operational KPIs from SAP and field systems to SLB management dashboard, including rig utilisation, NPT, and HSE metrics.",
+    "deployedTo": ["SLB-BW-Reporting-PROD"],
+    "lastModified": "2024-08-10T06:00:00Z",
     "activities": [
-      {"type":"JMSReceive","label":"Consume sap.sd.order-confirm Queue"},
-      {"type":"JDBCQuery","label":"Get Trading Partner EDI Config","table":"EDI_PARTNER_CONFIG","operation":"SELECT"},
-      {"type":"Mapper","label":"Map SAP Order to EDI 855","xslt":true},
-      {"type":"Decision","label":"Partner Requires 855?"},
-      {"type":"AS2Send","label":"Send 855 via AS2"},
-      {"type":"JDBCInsert","label":"Log EDI Transmission","table":"EDI_TRANSACTION_LOG","operation":"INSERT"},
-      {"type":"JMSPublish","label":"Publish edi.855.sent Event"},
-      {"type":"FileWrite","label":"Archive 855 Document"}
+      {"type":"TimerTrigger","label":"Daily KPI Feed","transport":"Timer"},
+      {"type":"JDBCQuery","label":"Query KPI Data","transport":"JDBC"},
+      {"type":"Mapper","label":"KPI Transform","transport":"Internal"},
+      {"type":"JavaActivity","label":"Aggregate Metrics","transport":"Internal"},
+      {"type":"HTTPActivity","label":"Post to Dashboard","transport":"HTTP"},
+      {"type":"JDBCActivity","label":"Update KPI Store","transport":"JDBC"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["TIBCO_EMS_Connection","AS2_EDI_Connection","JDBC_RetailCo_EDI"],
-    "connectorTypes": ["JMS","AS2","JDBC"],
+    "sharedResources": ["SLB_KPIDB_JDBC","SLB_Dashboard_HTTP"],
     "mappers": [
-      {"name":"SAP_OrderConfirm_to_EDI855","type":"XSLT","fields":44,"hasCustomXPath":true},
-      {"name":"EDI855_PartnerVariant_Mapper","type":"XSLT","fields":28},
-      {"name":"EDI_Log_Mapper","type":"BW Mapper","fields":9},
-      {"name":"Archive_Mapper","type":"BW Mapper","fields":6}
+      {"name":"KPITransformMapper","type":"BW Mapper","fields":["RigUtilisation","NPT_Hours","HSE_TotalRecordable","WellsCompleted","RevenuePM","OperatingCost"],"hasCustomXPath":false},
+      {"name":"DashboardPayloadMapper","type":"XSLT","fields":["MetricID","Value","Unit","Trend","Target","Variance","Period"],"hasCustomXPath":true}
     ],
     "scripts": [
-      {"language":"Java","name":"EDI855SegmentBuilder","purpose":"Builds BAK/PO1/CTT segments with line-level acceptance/rejection codes"},
-      {"language":"Java","name":"AS2EnvelopeBuilder","purpose":"Builds AS2 envelope with partner-specific ISA/GS segments and MDN settings"}
+      {"name":"KPIAggregationEngine","language":"java","purpose":"Aggregate KPIs across business lines, geographies, and time periods for dashboard display"}
     ],
-    "errorHandling": {"type":"try_catch","hasTimeout":true,"timeoutSeconds":30,"hasFaultHandler":true},
-    "dependencies": ["EDI_Common.bwlib","AS2_Library","SCM_Common.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","AS2 Receiver Adapter","JDBC Adapter","JMS Receiver Adapter","SFTP Adapter (Archive)"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SLB_OperationsDB","SLB_KPIDashboard"],
+    "iflowAdapters": ["Timer Sender Adapter","JDBC Adapter","HTTP Receiver Adapter"]
   },
-  "HR_Payroll_Interface": {
-    "platformId": "tibco-p4-HR_Payroll_Interface",
-    "projectPath": "/RetailCo/HR/Payroll",
-    "description": "Scheduled payroll data interface from SAP HCM to external payroll bureau via SFTP.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-20T05:00:00Z",
+  "Production_Volume_Report_Sync": {
+    "platformId": "tibco-slb-production-report-022",
+    "projectPath": "/SLB/Reporting/Production",
+    "description": "Sync production volume reports from client operator systems to SLB internal reporting platform for revenue calculation and contract performance tracking.",
+    "deployedTo": ["SLB-BW-Reporting-PROD"],
+    "lastModified": "2024-09-08T07:00:00Z",
     "activities": [
-      {"type":"Timer","label":"Schedule Payroll Run Day","config":"0 6 * * 4"},
-      {"type":"JDBCQuery","label":"Extract Payroll Data from SAP HCM View","table":"HR_PAYROLL_VIEW","operation":"SELECT"},
-      {"type":"Mapper","label":"Map to Payroll Bureau Format","xslt":false},
-      {"type":"JDBCQuery","label":"Get Employee Bank Details","table":"PA0009","operation":"SELECT"},
-      {"type":"Mapper","label":"Merge Employee Payment Data","xslt":false},
-      {"type":"FileWrite","label":"Write Payroll File to SFTP","config":"SFTP /payroll/outbound/"},
-      {"type":"JDBCInsert","label":"Log Payroll Export","table":"PAYROLL_EXPORT_LOG","operation":"INSERT"},
-      {"type":"SMTPSend","label":"Send Payroll Confirmation to HR"}
+      {"type":"SFTPReceive","label":"Receive Client Report","transport":"SFTP"},
+      {"type":"Mapper","label":"Volume Data Transform","transport":"Internal"},
+      {"type":"JavaActivity","label":"Validate & Reconcile","transport":"Internal"},
+      {"type":"JDBCActivity","label":"Store in Reporting DB","transport":"JDBC"},
+      {"type":"SFTPSend","label":"Archive Report","transport":"SFTP"},
+      {"type":"SMTPActivity","label":"Notify Revenue Team","transport":"SMTP"},
+      {"type":"Stop","label":"End","transport":"Internal"}
     ],
-    "sharedResources": ["JDBC_RetailCo_HR","SFTP_PayrollBureau","SMTP_RetailCo"],
-    "connectorTypes": ["JDBC","SFTP","SMTP"],
+    "sharedResources": ["SLB_ClientSFTP_Conn","SLB_ReportingDB_JDBC","SLB_ArchiveSFTP_Conn","SLB_SMTP_Conn"],
     "mappers": [
-      {"name":"HCM_to_PayrollBureau","type":"BW Mapper","fields":31},
-      {"name":"PaymentDetailsMapper","type":"BW Mapper","fields":14},
-      {"name":"ConfirmationEmailMapper","type":"BW Mapper","fields":8}
+      {"name":"ProductionVolumeMapper","type":"XSLT","fields":["WellID","ProductionDate","OilVolume","GasVolume","WaterCut","UoM","ClientRef"],"hasCustomXPath":true},
+      {"name":"ReconciliationMapper","type":"BW Mapper","fields":["ReportedVolume","ContractVolume","Variance","VariancePct","Status"],"hasCustomXPath":false},
+      {"name":"ArchiveIndexMapper","type":"BW Mapper","fields":["ReportID","ClientName","ReportDate","RecordCount","Status"],"hasCustomXPath":false}
     ],
     "scripts": [
-      {"language":"Java","name":"PayrollDataEncryptor","purpose":"PGP-encrypts payroll file before SFTP transmission to bureau"}
+      {"name":"VolumeReconciliationEngine","language":"java","purpose":"Reconcile reported production volumes against contract commitments and flag variances"}
     ],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["HR_Common.bwlib","SFTP_Library","Payroll_Config.bwlib"],
-    "iflowAdapters": ["Timer Start Event","JDBC Adapter","SFTP Receiver Adapter","Mail Adapter"]
-  },
-  "Cash_Register_Sync": {
-    "platformId": "tibco-p4-Cash_Register_Sync",
-    "projectPath": "/RetailCo/POS/CashRegister",
-    "description": "Scheduled sync of cash register configuration from SAP to POS terminals.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-09-15T02:00:00Z",
-    "activities": [
-      {"type":"Timer","label":"Schedule Nightly 2AM","config":"0 2 * * *"},
-      {"type":"JDBCQuery","label":"Get Register Config from SAP View","table":"POS_CONFIG_VIEW","operation":"SELECT"},
-      {"type":"Mapper","label":"Map to POS Terminal Format","xslt":false},
-      {"type":"HTTPRequest","label":"POST Config to POS Terminal API","endpoint":"POS Terminal API /config/update"},
-      {"type":"JDBCUpdate","label":"Update Config Sync Timestamp","table":"POS_SYNC_STATUS","operation":"UPDATE"}
-    ],
-    "sharedResources": ["JDBC_RetailCo_SAP","HTTP_Client_POS"],
-    "connectorTypes": ["JDBC","HTTP"],
-    "mappers": [
-      {"name":"SAP_to_POS_Terminal_Config","type":"BW Mapper","fields":14}
-    ],
-    "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["POS_Common.bwlib"],
-    "iflowAdapters": ["Timer Start Event","JDBC Adapter","HTTPS Receiver (POS Terminal API)"]
-  },
-  "Product_Taxonomy_Update": {
-    "platformId": "tibco-p4-Product_Taxonomy_Update",
-    "projectPath": "/RetailCo/SCM/ProductTaxonomy",
-    "description": "Scheduled sync of product category hierarchy from SAP to e-commerce platform.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-09-20T03:00:00Z",
-    "activities": [
-      {"type":"Timer","label":"Schedule Weekly Saturday","config":"0 3 * * 6"},
-      {"type":"HTTPRequest","label":"GET Product Hierarchy from SAP OData","endpoint":"SAP OData /ProductHierarchyNode"},
-      {"type":"Mapper","label":"Map to eCommerce Category Format","xslt":false},
-      {"type":"HTTPRequest","label":"PUT Category Tree to eCommerce","endpoint":"eCommerce API /categories/tree"}
-    ],
-    "sharedResources": ["HTTP_Client_SAP","HTTP_Client_eCommerce"],
-    "connectorTypes": ["HTTP"],
-    "mappers": [
-      {"name":"SAP_Hierarchy_to_eCommerce_Categories","type":"BW Mapper","fields":13}
-    ],
-    "scripts": [],
-    "errorHandling": {"type":"basic","hasTimeout":false,"hasFaultHandler":false},
-    "dependencies": ["SCM_Common.bwlib"],
-    "iflowAdapters": ["Timer Start Event","HTTPS Sender Adapter (SAP OData)","HTTPS Receiver (eCommerce)"]
-  },
-  "Return_Auth_Processing": {
-    "platformId": "tibco-p4-Return_Auth_Processing",
-    "projectPath": "/RetailCo/CRM/ReturnAuth",
-    "description": "Return authorization API — validates return eligibility, generates RMA number, and creates SAP sales return.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-10T11:00:00Z",
-    "activities": [
-      {"type":"Receive","label":"POST /returns/authorize","transport":"HTTP"},
-      {"type":"JDBCQuery","label":"Get Original Order Details","table":"ORDERS","operation":"SELECT"},
-      {"type":"Decision","label":"Within Return Window?"},
-      {"type":"Mapper","label":"Map to SAP Return Order","xslt":false},
-      {"type":"HTTPRequest","label":"Create SAP SD Return","endpoint":"SAP RFC BAPI_SALESORDER_CREATEFROMDAT2"},
-      {"type":"JDBCUpdate","label":"Log Return Authorization","table":"RETURN_LOG","operation":"INSERT"},
-      {"type":"Reply","label":"Return RMA Details"}
-    ],
-    "sharedResources": ["HTTP_Client_SAP","JDBC_RetailCo_OMS"],
-    "connectorTypes": ["HTTP","JDBC"],
-    "mappers": [
-      {"name":"OrderToReturnRequest","type":"BW Mapper","fields":19},
-      {"name":"SAP_Return_to_RMA_Response","type":"BW Mapper","fields":11}
-    ],
-    "scripts": [
-      {"language":"Java","name":"ReturnWindowValidator","purpose":"Validates return request against product-specific return policies and purchase date window"}
-    ],
-    "errorHandling": {"type":"try_catch","hasTimeout":true,"timeoutSeconds":15,"hasFaultHandler":false},
-    "dependencies": ["CRM_Common.bwlib"],
-    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (SAP SD)","JDBC Adapter"]
-  },
-  "Vendor_Payment_Batch": {
-    "platformId": "tibco-p4-Vendor_Payment_Batch",
-    "projectPath": "/RetailCo/FIN/VendorPayment",
-    "description": "Scheduled vendor payment batch — processes SAP FI payment runs and generates BACS/SEPA payment files for bank submission.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-11-30T21:00:00Z",
-    "activities": [
-      {"type":"Timer","label":"Schedule Twice Weekly","config":"0 21 * * 2,4"},
-      {"type":"JDBCQuery","label":"Get Approved Payment Run Items","table":"PAYR_VIEW","operation":"SELECT"},
-      {"type":"Mapper","label":"Build BACS/SEPA Payment File","xslt":true},
-      {"type":"Decision","label":"SEPA or BACS?"},
-      {"type":"FileWrite","label":"Write SEPA Credit Transfer to Bank SFTP","config":"SFTP /payments/sepa/"},
-      {"type":"FileWrite","label":"Write BACS File to Bank SFTP","config":"SFTP /payments/bacs/"},
-      {"type":"JDBCUpdate","label":"Update Payment Status in SAP View","table":"PAYR_STATUS","operation":"UPDATE"},
-      {"type":"SMTPSend","label":"Send Payment Confirmation to Treasury"},
-      {"type":"JDBCInsert","label":"Log Payment Batch","table":"PAYMENT_BATCH_LOG","operation":"INSERT"}
-    ],
-    "sharedResources": ["JDBC_RetailCo_FIN","SFTP_Bank_SEPA","SFTP_Bank_BACS","SMTP_RetailCo"],
-    "connectorTypes": ["JDBC","SFTP","SMTP"],
-    "mappers": [
-      {"name":"SAP_Payments_to_SEPA_pain001","type":"XSLT","fields":38,"hasCustomXPath":true},
-      {"name":"SAP_Payments_to_BACS_STD18","type":"XSLT","fields":32},
-      {"name":"PaymentConfirmation_Email","type":"BW Mapper","fields":14},
-      {"name":"BatchLog_Mapper","type":"BW Mapper","fields":9}
-    ],
-    "scripts": [
-      {"language":"Java","name":"IBANValidator","purpose":"Validates IBAN format and checksum for SEPA transactions across 36 country formats"},
-      {"language":"Java","name":"SortCodeValidator","purpose":"Validates UK sort codes and account numbers for BACS payment files"}
-    ],
-    "errorHandling": {"type":"try_catch","hasTimeout":false,"hasFaultHandler":true},
-    "dependencies": ["FIN_Common.bwlib","Payment_Library.bwlib","SEPA_Schema.bwlib"],
-    "iflowAdapters": ["Timer Start Event","JDBC Adapter","SFTP Adapter (SEPA)","SFTP Adapter (BACS)","Mail Adapter"]
-  },
-  "Cross_Channel_Order_Merge": {
-    "platformId": "tibco-p4-Cross_Channel_Order_Merge",
-    "projectPath": "/RetailCo/SCM/CrossChannel",
-    "description": "Complex cross-channel order orchestration — merges online, mobile, and in-store orders into unified SAP SD order with inventory allocation and fulfillment routing.",
-    "runtime": "TIBCO BW 5.14",
-    "lastModified": "2025-12-03T10:00:00Z",
-    "activities": [
-      {"type":"JMSReceive","label":"Consume order.cross-channel Queue"},
-      {"type":"Mapper","label":"Parse Multi-Channel Order Payload","xslt":true},
-      {"type":"JDBCQuery","label":"Get Channel Routing Rules","table":"CHANNEL_ROUTING_RULES","operation":"SELECT"},
-      {"type":"Decision","label":"Route by Fulfillment Type (Ship/Click+Collect/In-Store)"},
-      {"type":"JDBCQuery","label":"Multi-Location Inventory Check","table":"INVENTORY_MULTI_SITE","operation":"SELECT"},
-      {"type":"Mapper","label":"Allocate Inventory with Priority Logic","xslt":false},
-      {"type":"HTTPRequest","label":"Create SAP SD Order","endpoint":"SAP RFC BAPI_SALESORDER_CREATEFROMDAT2"},
-      {"type":"JMSPublish","label":"Publish to fulfillment.routing Queue"},
-      {"type":"HTTPRequest","label":"Update OMS with Allocation","endpoint":"OMS API /orders/{id}/allocation"},
-      {"type":"Mapper","label":"Build Customer Confirmation","xslt":false},
-      {"type":"JMSPublish","label":"Publish to customer.notifications Queue"},
-      {"type":"JDBCInsert","label":"Log Cross-Channel Order","table":"CROSS_CHANNEL_LOG","operation":"INSERT"},
-      {"type":"FaultHandler","label":"Rollback on Failure — Compensation"},
-      {"type":"JMSPublish","label":"Publish Dead Letter Event"}
-    ],
-    "sharedResources": ["TIBCO_EMS_Connection","HTTP_Client_SAP","HTTP_Client_OMS","JDBC_RetailCo_SCM"],
-    "connectorTypes": ["JMS","HTTP","JDBC"],
-    "mappers": [
-      {"name":"MultiChannelOrder_Parser","type":"XSLT","fields":42,"hasCustomXPath":true},
-      {"name":"InventoryAllocation_Logic","type":"BW Mapper","fields":28},
-      {"name":"SAP_Order_Mapper","type":"BW Mapper","fields":36},
-      {"name":"CustomerConfirmation_Builder","type":"BW Mapper","fields":19}
-    ],
-    "scripts": [
-      {"language":"Java","name":"MultiSiteInventoryAllocator","purpose":"Optimizes inventory allocation across 200+ store and DC locations based on proximity, SLA, and stock levels"},
-      {"language":"Java","name":"FulfillmentRoutingEngine","purpose":"Determines optimal fulfillment point using ML-weighted scoring of cost, speed, and capacity"},
-      {"language":"Java","name":"CompensationHandler","purpose":"Implements saga compensation pattern — rolls back SAP order and OMS allocation on partial failure"}
-    ],
-    "errorHandling": {"type":"multi_try_catch","hasTimeout":true,"timeoutSeconds":45,"hasFaultHandler":true,"hasDLQ":true},
-    "dependencies": ["SCM_Common.bwlib","SAP_RFC_Library","OMS_Integration.bwlib","Inventory_Lib.bwlib","Compensation_Framework.bwlib"],
-    "iflowAdapters": ["JMS Sender Adapter","HTTPS Receiver (SAP SD)","HTTPS Receiver (OMS)","JMS Receiver Adapter","JDBC Adapter"]
+    "errorHandling": {"type":"basic"},
+    "dependencies": ["SLB_ClientSFTP","SLB_ReportingDB","RevenueDB","ArchiveSFTP"],
+    "iflowAdapters": ["SFTP Sender Adapter","JDBC Adapter","SFTP Receiver Adapter","Mail Adapter"]
   }
 }
