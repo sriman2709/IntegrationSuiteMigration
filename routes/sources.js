@@ -7,6 +7,8 @@ const fs      = require('fs');
 const { pool }           = require('../database/db');
 const boomiService       = require('../services/boomi-service');
 const mulesoftService    = require('../services/mulesoft-service');
+const pipoService        = require('../services/pipo-service');
+const tibcoService       = require('../services/tibco-service');
 const { createError }    = require('../middleware/error-handler');
 
 // ── File upload setup ─────────────────────────────────────────────────────────
@@ -73,8 +75,17 @@ router.post('/upload', upload.single('artifact_file'), async (req, res, next) =>
   const filePath = req.file.path;
   try {
     if (platform === 'mulesoft') {
-      // Use deep service parser (handles multi-file ZIPs natively)
       const result = await mulesoftService.parseAndPersist(filePath, req.file.originalname, project_id, source_name);
+      return res.json(result);
+    }
+
+    if (platform === 'pipo') {
+      const result = await pipoService.parseAndPersist(filePath, req.file.originalname, project_id, source_name);
+      return res.json(result);
+    }
+
+    if (platform === 'tibco') {
+      const result = await tibcoService.parseAndPersist(filePath, req.file.originalname, project_id, source_name);
       return res.json(result);
     }
 

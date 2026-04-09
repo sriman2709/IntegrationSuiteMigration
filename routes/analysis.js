@@ -345,4 +345,37 @@ function buildRoadmap(simple, medium, complex, totalEffort, months) {
   return phases;
 }
 
+// GET /api/analysis/project/:id/roi — ROI model data
+router.get('/project/:id/roi', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { dayRate = 1500, uplift = 30, teams = 3, hypercare = 4,
+            legacyLicense = 250000, sapLicense = 180000,
+            legacyFtes = 3, sapFtes = 1.5, fteCost = 120000, horizon = 5 } = req.query;
+
+    const [project, artifacts] = await Promise.all([
+      pool.query('SELECT * FROM projects WHERE id = $1', [id]),
+      pool.query('SELECT effort_days FROM artifacts WHERE project_id = $1', [id])
+    ]);
+    if (!project.rows.length) return res.status(404).json({ error: 'Not found' });
+
+    const effortDays   = artifacts.rows.reduce((s, a) => s + (parseInt(a.effort_days) || 0), 0);
+    const baseCost     = effortDays * parseFloat(dayRate);
+    const migrationCost = baseCost * (1 + parseFloat(uplift) / 100) + parseFloat(hypercare) * parseFloat(teams) * parseFloat(dayRate) * 5;
+    const annualSaving  = (parseFloat(legacyLicense) - parseFloat(sapLicense)) + (parseFloat(legacyFtes) - parseFloat(sapFtes)) * parseFloat(fteCost);
+    const payback       = annualSaving > 0 ? migrationCost / annualSaving : null;
+    const roi           = migrationCost > 0 ? ((annualSaving * parseFloat(horizon) - migrationCost) / migrationCost) * 100 : 0;
+
+    const r = 0.08;
+    let npv = -migrationCost;
+    for (let y = 1; y <= parseFloat(horizon); y++) npv += annualSaving / Math.pow(1 + r, y);
+
+    res.json({
+      project: project.rows[0],
+      inputs: { effortDays, dayRate, uplift, teams, hypercare, legacyLicense, sapLicense, legacyFtes, sapFtes, fteCost, horizon },
+      results: { migrationCost: Math.round(migrationCost), annualSaving: Math.round(annualSaving), paybackYears: payback ? Math.round(payback * 10) / 10 : null, roi: Math.round(roi), npv: Math.round(npv) }
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

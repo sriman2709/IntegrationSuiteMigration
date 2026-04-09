@@ -301,6 +301,10 @@ select.form-control{cursor:pointer;}
       <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 00-2 2v6a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg>
       Assets
     </div>
+    <div class="nav-item" onclick="showPage('roi')" id="nav-roi">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      ROI Calculator
+    </div>
     <div class="nav-item" onclick="showPage('runs')" id="nav-runs">
       <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Runs
@@ -308,6 +312,12 @@ select.form-control{cursor:pointer;}
     <div class="nav-item" onclick="showPage('settings')" id="nav-settings">
       <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       Settings
+    </div>
+  </div>
+  <div class="nav-section" style="margin-top:auto;">
+    <div class="nav-item" onclick="enterPresentationMode()" id="nav-demo" style="color:#F59E0B;">
+      <svg class="nav-icon" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="opacity:1;"><path d="M8 6H5a2 2 0 00-2 2v8a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-3M8 6V4m8 2V4M8 6h8"/><path d="M12 11v5M9.5 13.5l2.5-2.5 2.5 2.5"/></svg>
+      Presentation Mode
     </div>
   </div>
   <div class="sidebar-bottom">
@@ -762,8 +772,156 @@ select.form-control{cursor:pointer;}
       </div>
     </div>
 
+    <!-- ═══ ROI CALCULATOR PAGE ══════════════════════════════════════════ -->
+    <div class="page" id="page-roi">
+      <div class="page-header">
+        <div>
+          <div class="page-title">ROI Calculator</div>
+          <div class="page-subtitle">Business case modelling for SAP Integration Suite migration</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" onclick="resetRoiForm()">Reset</button>
+          <button class="btn btn-primary" onclick="calculateRoi()">
+            <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            Calculate ROI
+          </button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+        <!-- Left: Inputs -->
+        <div>
+          <div class="card" style="padding:20px 24px;margin-bottom:16px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              Project Context
+            </div>
+            <div style="margin-bottom:12px;">
+              <label class="form-label">Project</label>
+              <select class="form-control" id="roi-project-select" onchange="loadRoiProjectData()">
+                <option value="">-- Select a project --</option>
+              </select>
+            </div>
+            <div id="roi-project-stats" style="display:none;background:var(--bg-secondary);border-radius:8px;padding:12px;font-size:12px;">
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;" id="roi-stats-grid"></div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:20px 24px;margin-bottom:16px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+              Migration Cost Assumptions
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <label class="form-label">Consultant Day Rate (USD)</label>
+                <input type="number" class="form-control" id="roi-day-rate" value="1500" min="500" max="5000" step="100">
+              </div>
+              <div>
+                <label class="form-label">Overhead / Uplift %</label>
+                <input type="number" class="form-control" id="roi-uplift" value="30" min="0" max="100">
+              </div>
+              <div>
+                <label class="form-label">Parallel Migration Teams</label>
+                <input type="number" class="form-control" id="roi-teams" value="3" min="1" max="10">
+              </div>
+              <div>
+                <label class="form-label">Hypercare Period (weeks)</label>
+                <input type="number" class="form-control" id="roi-hypercare" value="4" min="1" max="16">
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="padding:20px 24px;">
+            <div style="font-size:14px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              License & Operational Assumptions
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <label class="form-label">Legacy Platform License (USD/yr)</label>
+                <input type="number" class="form-control" id="roi-legacy-license" value="250000" step="10000">
+              </div>
+              <div>
+                <label class="form-label">SAP IS License (USD/yr)</label>
+                <input type="number" class="form-control" id="roi-sap-license" value="180000" step="10000">
+              </div>
+              <div>
+                <label class="form-label">Legacy Platform FTEs</label>
+                <input type="number" class="form-control" id="roi-legacy-ftes" value="3" min="0" max="20">
+              </div>
+              <div>
+                <label class="form-label">SAP IS FTEs (post-migration)</label>
+                <input type="number" class="form-control" id="roi-sap-ftes" value="1.5" min="0" max="20" step="0.5">
+              </div>
+              <div>
+                <label class="form-label">FTE Annual Cost (USD)</label>
+                <input type="number" class="form-control" id="roi-fte-cost" value="120000" step="10000">
+              </div>
+              <div>
+                <label class="form-label">Analysis Horizon (years)</label>
+                <select class="form-control" id="roi-horizon">
+                  <option value="3">3 years</option>
+                  <option value="5" selected>5 years</option>
+                  <option value="7">7 years</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Results -->
+        <div>
+          <div id="roi-results-placeholder" class="card" style="padding:40px 24px;text-align:center;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+            <svg width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="color:var(--text-secondary);opacity:.5;"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+            <div style="color:var(--text-secondary);font-size:14px;">Select a project and click <strong>Calculate ROI</strong> to generate your business case</div>
+          </div>
+          <div id="roi-results" style="display:none;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;" id="roi-kpis"></div>
+            <div class="card" style="padding:20px 24px;margin-bottom:16px;" id="roi-tco-section"></div>
+            <div class="card" style="padding:20px 24px;" id="roi-summary-section"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div><!-- /page-content -->
 </div><!-- /main -->
+
+<!-- ═══ PRESENTATION MODE OVERLAY ════════════════════════════════════ -->
+<div id="presentation-overlay" style="display:none;position:fixed;inset:0;background:#0A0E1A;z-index:9999;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 32px;border-bottom:1px solid rgba(255,255,255,.08);background:#111827;">
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div style="font-size:18px;font-weight:800;color:#F59E0B;letter-spacing:-.5px;">Sierra Digital</div>
+      <div style="width:1px;height:24px;background:rgba(255,255,255,.15);"></div>
+      <div style="font-size:14px;color:rgba(255,255,255,.7);" id="demo-slide-label">Migration Assessment Tool</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="font-size:12px;color:rgba(255,255,255,.4);" id="demo-slide-counter">Slide 1 / 5</div>
+      <button onclick="resetDemoData()" style="background:#DC2626;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
+        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Demo Reset
+      </button>
+      <button onclick="exitPresentationMode()" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;">
+        Exit
+      </button>
+    </div>
+  </div>
+
+  <!-- Slide content -->
+  <div style="flex:1;overflow-y:auto;padding:40px 64px;" id="demo-slide-content"></div>
+
+  <!-- Navigation -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 32px;border-top:1px solid rgba(255,255,255,.08);background:#111827;">
+    <button onclick="demoPrevSlide()" id="demo-prev-btn" style="background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:10px 24px;font-size:13px;font-weight:500;cursor:pointer;">
+      ← Previous
+    </button>
+    <div style="display:flex;gap:8px;" id="demo-dots"></div>
+    <button onclick="demoNextSlide()" id="demo-next-btn" style="background:#F59E0B;color:#111;border:none;border-radius:6px;padding:10px 24px;font-size:13px;font-weight:700;cursor:pointer;">
+      Next →
+    </button>
+  </div>
+</div>
 
 <!-- ═══ CONNECT SOURCE MODAL ═════════════════════════════════════════ -->
 <div id="connect-modal" class="modal-backdrop" style="display:none;" onclick="closeConnectModal(event)">
@@ -968,6 +1126,7 @@ function showPage(page) {
   if (page === 'assets') { loadProjectsForSelect(); if (state.currentProjectId) loadSources(state.currentProjectId); }
   if (page === 'settings') { loadSettingsProjects(); }
   if (page === 'runs') loadRuns();
+  if (page === 'roi') { loadRoiProjects(); }
 }
 
 function updateBreadcrumb(parts) {
@@ -2282,10 +2441,474 @@ function downloadText(text, filename) {
   URL.revokeObjectURL(url);
 }
 
+// ── ROI CALCULATOR ────────────────────────────────────────────────────────────
+async function loadRoiProjects() {
+  try {
+    const projects = await api('/api/projects');
+    const sel = document.getElementById('roi-project-select');
+    sel.innerHTML = '<option value="">-- Select a project --</option>' +
+      projects.map(p => `<option value="${p.id}">${esc(p.name)} — ${esc(p.customer || '')}</option>`).join('');
+  } catch (e) { /* ignore */ }
+}
+
+async function loadRoiProjectData() {
+  const projectId = document.getElementById('roi-project-select').value;
+  if (!projectId) { document.getElementById('roi-project-stats').style.display = 'none'; return; }
+  try {
+    const analysis = await api(`/api/analysis/project/${projectId}`);
+    const a = analysis.analysis;
+    const stats = document.getElementById('roi-project-stats');
+    stats.style.display = 'block';
+    document.getElementById('roi-stats-grid').innerHTML = `
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:var(--accent);">${a.total_processes}</div>
+        <div style="color:var(--text-secondary);">Artifacts</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:var(--accent);">${a.total_effort_days}</div>
+        <div style="color:var(--text-secondary);">Effort Days</div>
+      </div>
+      <div style="text-align:center;">
+        <div style="font-size:22px;font-weight:800;color:var(--accent);">${a.migration_duration_months}m</div>
+        <div style="color:var(--text-secondary);">Est. Duration</div>
+      </div>`;
+  } catch (e) { /* ignore */ }
+}
+
+function getVal(id) { return parseFloat(document.getElementById(id).value) || 0; }
+
+async function calculateRoi() {
+  const projectId = document.getElementById('roi-project-select').value;
+  if (!projectId) { toast('Please select a project first', 'warning'); return; }
+
+  let effortDays = 0;
+  let totalArtifacts = 0;
+  let durationMonths = 3;
+  try {
+    const analysis = await api(`/api/analysis/project/${projectId}`);
+    const a = analysis.analysis;
+    effortDays = a.total_effort_days;
+    totalArtifacts = a.total_processes;
+    durationMonths = a.migration_duration_months;
+  } catch (e) { effortDays = 120; totalArtifacts = 40; durationMonths = 4; }
+
+  const dayRate        = getVal('roi-day-rate');
+  const uplift         = getVal('roi-uplift') / 100;
+  const teams          = getVal('roi-teams');
+  const hypercare      = getVal('roi-hypercare');
+  const legacyLicense  = getVal('roi-legacy-license');
+  const sapLicense     = getVal('roi-sap-license');
+  const legacyFtes     = getVal('roi-legacy-ftes');
+  const sapFtes        = getVal('roi-sap-ftes');
+  const fteCost        = getVal('roi-fte-cost');
+  const horizon        = getVal('roi-horizon');
+
+  // Migration cost
+  const baseMigration  = effortDays * dayRate;
+  const withUplift     = baseMigration * (1 + uplift);
+  const hypercareWeeks = hypercare;
+  const hypercareCost  = hypercareWeeks * teams * dayRate * 5; // 5 days/week
+  const totalMigration = withUplift + hypercareCost;
+
+  // Annual savings
+  const licenceSaving  = legacyLicense - sapLicense;
+  const fteSaving      = (legacyFtes - sapFtes) * fteCost;
+  const annualSaving   = licenceSaving + fteSaving;
+  const annualSavingAbs = Math.abs(annualSaving);
+
+  // Payback
+  const paybackYears   = annualSaving > 0 ? totalMigration / annualSaving : null;
+
+  // 5-year NPV (discount rate 8%)
+  const r = 0.08;
+  let npv = -totalMigration;
+  const yearlyData = [];
+  for (let y = 1; y <= horizon; y++) {
+    const pv = annualSaving / Math.pow(1 + r, y);
+    npv += pv;
+    yearlyData.push({ year: y, saving: annualSaving, pv: Math.round(pv), cumulativePv: 0 });
+  }
+  let cum = -totalMigration;
+  yearlyData.forEach(d => { cum += d.saving; d.cumulativePv = Math.round(cum); });
+
+  const roi = totalMigration > 0 ? ((annualSaving * horizon - totalMigration) / totalMigration) * 100 : 0;
+
+  // Render
+  document.getElementById('roi-results-placeholder').style.display = 'none';
+  document.getElementById('roi-results').style.display = 'block';
+
+  document.getElementById('roi-kpis').innerHTML = [
+    { label: 'Migration Investment', value: fmt$(totalMigration), icon: '💰', sub: `${effortDays} days × $${dayRate.toLocaleString()}/day + ${uplift*100}% uplift`, color: '#DC2626' },
+    { label: `${horizon}-Year Savings`, value: fmt$(annualSaving * horizon), icon: '📈', sub: `$${annualSavingAbs.toLocaleString()}/yr license + staffing savings`, color: '#059669' },
+    { label: 'Payback Period', value: paybackYears ? `${paybackYears.toFixed(1)} yrs` : 'N/A', icon: '⏱', sub: paybackYears && paybackYears < 3 ? 'Excellent payback' : paybackYears && paybackYears < 5 ? 'Good payback' : 'Long-term play', color: '#2563EB' },
+    { label: `${horizon}-Year ROI`, value: `${roi.toFixed(0)}%`, icon: '🎯', sub: `NPV: ${fmt$(npv)} at 8% discount`, color: roi > 0 ? '#059669' : '#DC2626' }
+  ].map(k => `
+    <div class="card" style="padding:16px 20px;">
+      <div style="font-size:22px;margin-bottom:4px;">${k.icon}</div>
+      <div style="font-size:11px;color:var(--text-secondary);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">${k.label}</div>
+      <div style="font-size:26px;font-weight:800;color:${k.color};margin:4px 0;">${k.value}</div>
+      <div style="font-size:11px;color:var(--text-secondary);">${k.sub}</div>
+    </div>`).join('');
+
+  // TCO table
+  const tcoHtml = `
+    <div style="font-size:14px;font-weight:700;margin-bottom:16px;">Year-by-Year Cash Flow (${horizon}-Year View)</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:8px 12px;color:var(--text-secondary);font-weight:600;">Year</th>
+          <th style="text-align:right;padding:8px 12px;color:var(--text-secondary);font-weight:600;">Annual Saving</th>
+          <th style="text-align:right;padding:8px 12px;color:var(--text-secondary);font-weight:600;">Cumulative Cash Flow</th>
+          <th style="text-align:right;padding:8px 12px;color:var(--text-secondary);font-weight:600;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid var(--border);background:rgba(220,38,38,.05);">
+          <td style="padding:8px 12px;font-weight:600;">Year 0</td>
+          <td style="padding:8px 12px;text-align:right;color:#DC2626;">${fmt$(-totalMigration)}</td>
+          <td style="padding:8px 12px;text-align:right;color:#DC2626;">${fmt$(-totalMigration)}</td>
+          <td style="padding:8px 12px;text-align:right;"><span class="badge badge-red">Investment</span></td>
+        </tr>
+        ${yearlyData.map(d => `
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px 12px;font-weight:600;">Year ${d.year}</td>
+            <td style="padding:8px 12px;text-align:right;color:#059669;">+${fmt$(d.saving)}</td>
+            <td style="padding:8px 12px;text-align:right;color:${d.cumulativePv >= 0 ? '#059669' : '#DC2626'};font-weight:${d.cumulativePv >= 0 ? 700 : 400};">${fmt$(d.cumulativePv)}</td>
+            <td style="padding:8px 12px;text-align:right;">${d.cumulativePv >= 0 ? '<span class="badge badge-green">Positive ROI</span>' : '<span class="badge badge-gray">Break-even pending</span>'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  document.getElementById('roi-tco-section').innerHTML = tcoHtml;
+
+  // Summary text
+  const paybackText = paybackYears
+    ? `The project breaks even in <strong>${paybackYears.toFixed(1)} years</strong>`
+    : `This migration represents a long-term strategic investment`;
+  document.getElementById('roi-summary-section').innerHTML = `
+    <div style="font-size:14px;font-weight:700;margin-bottom:12px;">Executive Summary</div>
+    <div style="font-size:13px;color:var(--text-secondary);line-height:1.7;">
+      Migrating <strong>${totalArtifacts} integration artifacts</strong> to SAP Integration Suite requires
+      an estimated investment of <strong>${fmt$(totalMigration)}</strong> (including ${hypercare}-week hypercare).
+      ${paybackText}, after which the organisation realises
+      <strong>${fmt$(annualSaving)}/year</strong> in net savings through license consolidation and reduced headcount.
+      Over ${horizon} years, the total return on investment is <strong>${roi.toFixed(0)}%</strong>
+      with a net present value of <strong>${fmt$(npv)}</strong>.
+    </div>
+    <div style="margin-top:16px;display:flex;gap:8px;">
+      <button class="btn btn-primary btn-sm" onclick="exportRoiReport()">
+        <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Report
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="enterPresentationMode()">Present to Client</button>
+    </div>`;
+
+  toast('ROI model calculated!', 'success');
+}
+
+function fmt$(n) {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 1000000) return `${sign}$${(abs/1000000).toFixed(1)}M`;
+  if (abs >= 1000)    return `${sign}$${(abs/1000).toFixed(0)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
+function resetRoiForm() {
+  document.getElementById('roi-day-rate').value   = 1500;
+  document.getElementById('roi-uplift').value     = 30;
+  document.getElementById('roi-teams').value      = 3;
+  document.getElementById('roi-hypercare').value  = 4;
+  document.getElementById('roi-legacy-license').value = 250000;
+  document.getElementById('roi-sap-license').value    = 180000;
+  document.getElementById('roi-legacy-ftes').value    = 3;
+  document.getElementById('roi-sap-ftes').value       = 1.5;
+  document.getElementById('roi-fte-cost').value       = 120000;
+  document.getElementById('roi-project-select').value = '';
+  document.getElementById('roi-project-stats').style.display = 'none';
+  document.getElementById('roi-results-placeholder').style.display = 'flex';
+  document.getElementById('roi-results').style.display = 'none';
+}
+
+function exportRoiReport() {
+  const kpisEl = document.getElementById('roi-kpis');
+  const tcoEl  = document.getElementById('roi-tco-section');
+  const sumEl  = document.getElementById('roi-summary-section');
+  if (!kpisEl) return;
+  const text = `SAP Integration Suite Migration — ROI Report\n${'='.repeat(50)}\n\n` +
+    kpisEl.innerText + '\n\n' + tcoEl.innerText + '\n\n' + sumEl.innerText;
+  downloadText(text, `ROI-Report-${new Date().toISOString().split('T')[0]}.txt`);
+  toast('ROI Report exported!', 'success');
+}
+
+// ── PRESENTATION MODE ─────────────────────────────────────────────────────────
+const DEMO_SLIDES = [
+  {
+    id: 'welcome',
+    label: 'Welcome — Sierra Digital',
+    render: () => `
+      <div style="text-align:center;padding:40px 0;">
+        <div style="font-size:48px;font-weight:900;color:#F59E0B;margin-bottom:8px;letter-spacing:-2px;">Migration Assessment Tool</div>
+        <div style="font-size:20px;color:rgba(255,255,255,.6);margin-bottom:48px;">Powered by Sierra Digital</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:800px;margin:0 auto;">
+          ${[
+            { icon: '⚡', title: 'Multi-Platform', sub: 'Boomi, MuleSoft, SAP PI/PO, TIBCO' },
+            { icon: '🧠', title: 'AI-Powered Analysis', sub: 'Complexity scoring & migration readiness' },
+            { icon: '📊', title: 'Business ROI', sub: 'TCO modelling & payback calculation' }
+          ].map(c => `<div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:32px 24px;text-align:center;">
+            <div style="font-size:36px;margin-bottom:12px;">${c.icon}</div>
+            <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;">${c.title}</div>
+            <div style="font-size:13px;color:rgba(255,255,255,.5);line-height:1.5;">${c.sub}</div>
+          </div>`).join('')}
+        </div>
+        <div style="margin-top:48px;font-size:14px;color:rgba(255,255,255,.3);">Use arrow keys or click Next to navigate</div>
+      </div>`
+  },
+  {
+    id: 'projects',
+    label: 'Active Projects',
+    render: async () => {
+      let projects = [];
+      try { projects = await api('/api/projects'); } catch (e) {}
+      return `
+        <div style="margin-bottom:32px;">
+          <div style="font-size:32px;font-weight:800;color:#fff;margin-bottom:8px;">Active Assessment Projects</div>
+          <div style="font-size:15px;color:rgba(255,255,255,.5);">${projects.length} projects across ${[...new Set(projects.map(p=>p.platform))].join(', ')} platforms</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(${Math.min(projects.length,3)},1fr);gap:16px;">
+          ${projects.slice(0,6).map(p => `
+            <div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:24px;">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+                <div style="font-size:24px;">${{boomi:'⚡',mulesoft:'🌊',pipo:'🔷',tibco:'🔥'}[p.platform]||'📦'}</div>
+                <div>
+                  <div style="font-size:15px;font-weight:700;color:#fff;">${esc(p.name)}</div>
+                  <div style="font-size:12px;color:rgba(255,255,255,.4);">${esc(p.customer||'')}</div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px;text-align:center;">
+                  <div style="font-size:22px;font-weight:800;color:#F59E0B;">${p.artifacts_count||0}</div>
+                  <div style="font-size:11px;color:rgba(255,255,255,.4);">Artifacts</div>
+                </div>
+                <div style="background:rgba(0,0,0,.2);border-radius:8px;padding:10px;text-align:center;">
+                  <div style="font-size:14px;font-weight:700;color:#10B981;">${esc(p.status||'active')}</div>
+                  <div style="font-size:11px;color:rgba(255,255,255,.4);">Status</div>
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }
+  },
+  {
+    id: 'artifacts',
+    label: 'Artifact Intelligence',
+    render: async () => {
+      let summary = { total: 0, simple: 0, medium: 0, complex: 0, effort: 0 };
+      try {
+        const projects = await api('/api/projects');
+        for (const p of projects.slice(0,3)) {
+          const a = await api(`/api/analysis/project/${p.id}`);
+          summary.total   += a.analysis.total_processes;
+          summary.simple  += a.analysis.simple_count;
+          summary.medium  += a.analysis.medium_count;
+          summary.complex += a.analysis.complex_count;
+          summary.effort  += a.analysis.total_effort_days;
+        }
+      } catch (e) {}
+      return `
+        <div style="margin-bottom:32px;">
+          <div style="font-size:32px;font-weight:800;color:#fff;margin-bottom:8px;">Artifact Intelligence Engine</div>
+          <div style="font-size:15px;color:rgba(255,255,255,.5);">Automated complexity scoring across all platforms</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px;">
+          ${[
+            { label: 'Total Artifacts', value: summary.total, color: '#F59E0B' },
+            { label: 'Simple (Auto)', value: summary.simple, color: '#10B981' },
+            { label: 'Medium (Partial)', value: summary.medium, color: '#3B82F6' },
+            { label: 'Complex (Manual)', value: summary.complex, color: '#EF4444' }
+          ].map(m => `<div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:24px;text-align:center;">
+            <div style="font-size:36px;font-weight:900;color:${m.color};">${m.value}</div>
+            <div style="font-size:13px;color:rgba(255,255,255,.5);margin-top:4px;">${m.label}</div>
+          </div>`).join('')}
+        </div>
+        <div style="background:rgba(255,255,255,.05);border-radius:12px;padding:24px;">
+          <div style="font-size:14px;font-weight:700;color:rgba(255,255,255,.8);margin-bottom:16px;">Scoring Dimensions</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            ${['Shapes & Steps','Connector Count','Mapping Complexity','Scripting Level','Error Handling','Dependencies'].map(d => `
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div style="width:8px;height:8px;background:#F59E0B;border-radius:50%;flex-shrink:0;"></div>
+                <span style="font-size:13px;color:rgba(255,255,255,.6);">${d}</span>
+              </div>`).join('')}
+          </div>
+        </div>`;
+    }
+  },
+  {
+    id: 'roadmap',
+    label: 'Migration Roadmap',
+    render: async () => {
+      let roadmap = [];
+      let projectName = '';
+      try {
+        const projects = await api('/api/projects');
+        if (projects.length > 0) {
+          const a = await api(`/api/analysis/project/${projects[0].id}`);
+          roadmap = a.analysis.roadmap || [];
+          projectName = projects[0].name;
+        }
+      } catch (e) {}
+      return `
+        <div style="margin-bottom:32px;">
+          <div style="font-size:32px;font-weight:800;color:#fff;margin-bottom:8px;">Migration Roadmap</div>
+          <div style="font-size:15px;color:rgba(255,255,255,.5);">${esc(projectName)} — Phase-based delivery plan</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          ${roadmap.map((phase, i) => `
+            <div style="background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:20px 24px;display:flex;gap:20px;align-items:flex-start;">
+              <div style="width:40px;height:40px;border-radius:50%;background:#F59E0B;color:#111;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${phase.phase}</div>
+              <div style="flex:1;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <div style="font-size:15px;font-weight:700;color:#fff;">${esc(phase.name)}</div>
+                  <div style="font-size:12px;color:#F59E0B;font-weight:600;background:rgba(245,158,11,.1);padding:3px 10px;border-radius:20px;">${esc(phase.duration)}</div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  ${(phase.activities||[]).slice(0,3).map(a => `<span style="font-size:12px;color:rgba(255,255,255,.5);background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);padding:3px 8px;border-radius:4px;">${esc(a)}</span>`).join('')}
+                </div>
+              </div>
+            </div>`).join('')}
+        </div>`;
+    }
+  },
+  {
+    id: 'roi',
+    label: 'Business Case & ROI',
+    render: () => `
+      <div style="margin-bottom:32px;">
+        <div style="font-size:32px;font-weight:800;color:#fff;margin-bottom:8px;">Business Case Summary</div>
+        <div style="font-size:15px;color:rgba(255,255,255,.5);">5-year TCO analysis — SAP Integration Suite migration</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+        <div>
+          <div style="background:rgba(5,150,105,.1);border:1px solid rgba(5,150,105,.3);border-radius:12px;padding:24px;margin-bottom:16px;">
+            <div style="font-size:13px;color:#10B981;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Cost Savings (Annual)</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;font-size:13px;">
+                <span style="color:rgba(255,255,255,.6);">License consolidation</span>
+                <span style="color:#10B981;font-weight:700;">$70K/yr</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;">
+                <span style="color:rgba(255,255,255,.6);">Reduced support headcount</span>
+                <span style="color:#10B981;font-weight:700;">$180K/yr</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;border-top:1px solid rgba(16,185,129,.2);padding-top:8px;margin-top:4px;">
+                <span style="color:#fff;font-weight:700;">Total Annual Saving</span>
+                <span style="color:#10B981;font-weight:800;font-size:16px;">$250K/yr</span>
+              </div>
+            </div>
+          </div>
+          <div style="background:rgba(37,99,235,.1);border:1px solid rgba(37,99,235,.3);border-radius:12px;padding:24px;">
+            <div style="font-size:13px;color:#3B82F6;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Strategic Benefits</div>
+            ${['Cloud-native, elastic scalability','Built-in SAP BTP integration','Unified monitoring & governance','Reduced vendor dependency','Modern API management'].map(b => `
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                <div style="width:6px;height:6px;border-radius:50%;background:#3B82F6;flex-shrink:0;"></div>
+                <span style="font-size:13px;color:rgba(255,255,255,.6);">${b}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+        <div>
+          <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:24px;margin-bottom:16px;">
+            <div style="font-size:13px;color:#F59E0B;font-weight:700;margin-bottom:16px;text-transform:uppercase;letter-spacing:.05em;">5-Year Business Case</div>
+            ${[
+              { yr: 'Year 0', val: '-$180K', note: 'Migration investment', color: '#EF4444' },
+              { yr: 'Year 1', val: '+$70K', note: 'Partial year savings', color: '#F59E0B' },
+              { yr: 'Year 2', val: '+$250K', note: 'Full year — break-even', color: '#10B981' },
+              { yr: 'Year 3-5', val: '+$750K', note: 'Net positive ROI', color: '#10B981' }
+            ].map(r => `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);">
+                <div>
+                  <div style="font-size:13px;color:rgba(255,255,255,.8);font-weight:600;">${r.yr}</div>
+                  <div style="font-size:11px;color:rgba(255,255,255,.4);">${r.note}</div>
+                </div>
+                <div style="font-size:18px;font-weight:800;color:${r.color};">${r.val}</div>
+              </div>`).join('')}
+          </div>
+          <div style="background:rgba(255,255,255,.05);border-radius:12px;padding:24px;text-align:center;">
+            <div style="font-size:48px;font-weight:900;color:#10B981;">487%</div>
+            <div style="font-size:14px;color:rgba(255,255,255,.5);margin-top:4px;">5-Year Return on Investment</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.3);margin-top:8px;">Based on Sierra Digital benchmark data</div>
+          </div>
+        </div>
+      </div>`
+  }
+];
+
+let demoCurrentSlide = 0;
+
+function enterPresentationMode() {
+  document.getElementById('presentation-overlay').style.display = 'flex';
+  document.getElementById('presentation-overlay').style.flexDirection = 'column';
+  demoCurrentSlide = 0;
+  renderDemoSlide();
+  document.addEventListener('keydown', demokeyHandler);
+}
+
+function exitPresentationMode() {
+  document.getElementById('presentation-overlay').style.display = 'none';
+  document.removeEventListener('keydown', demokeyHandler);
+}
+
+function demokeyHandler(e) {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') demoNextSlide();
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')  demoPrevSlide();
+  if (e.key === 'Escape') exitPresentationMode();
+}
+
+async function renderDemoSlide() {
+  const slide = DEMO_SLIDES[demoCurrentSlide];
+  document.getElementById('demo-slide-label').textContent = slide.label;
+  document.getElementById('demo-slide-counter').textContent = `Slide ${demoCurrentSlide + 1} / ${DEMO_SLIDES.length}`;
+
+  // Dots
+  document.getElementById('demo-dots').innerHTML = DEMO_SLIDES.map((_, i) =>
+    `<div style="width:${i===demoCurrentSlide?24:8}px;height:8px;border-radius:4px;background:${i===demoCurrentSlide?'#F59E0B':'rgba(255,255,255,.2)'};transition:all .2s;cursor:pointer;" onclick="demoGoTo(${i})"></div>`
+  ).join('');
+
+  document.getElementById('demo-prev-btn').style.visibility = demoCurrentSlide === 0 ? 'hidden' : 'visible';
+  document.getElementById('demo-next-btn').textContent = demoCurrentSlide === DEMO_SLIDES.length - 1 ? '✓ Finish' : 'Next →';
+
+  // Loading state
+  document.getElementById('demo-slide-content').innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:300px;"><svg class="spin" width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="rgba(255,255,255,.3)" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>`;
+
+  const content = typeof slide.render === 'function' ? await slide.render() : slide.render;
+  document.getElementById('demo-slide-content').innerHTML = content;
+}
+
+function demoNextSlide() {
+  if (demoCurrentSlide < DEMO_SLIDES.length - 1) { demoCurrentSlide++; renderDemoSlide(); }
+  else exitPresentationMode();
+}
+
+function demoPrevSlide() {
+  if (demoCurrentSlide > 0) { demoCurrentSlide--; renderDemoSlide(); }
+}
+
+function demoGoTo(i) { demoCurrentSlide = i; renderDemoSlide(); }
+
+async function resetDemoData() {
+  if (!confirm('Reset all demo data to original seed state? This will clear any changes and reload all sample projects.')) return;
+  try {
+    await api('/api/seed/reset', 'POST');
+    toast('Demo data reset to seed state!', 'success');
+    loadAllData();
+  } catch (e) {
+    toast('Reset failed: ' + e.message, 'error');
+  }
+}
+
 // ── INIT ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   loadAllData().catch(console.error);
   loadProjectsForSelect().catch(console.error);
+  loadRoiProjects().catch(console.error);
 });
 </script>
 </body>
