@@ -1,0 +1,863 @@
+{
+  "SO_Create_SAP_from_Salesforce": {
+    "platformId": "boomi-p1-SO_Create_SAP_from_Salesforce",
+    "folder": "/Production/CRM Integration",
+    "description": "Creates SAP Sales Order from Salesforce Opportunity via HTTPS API trigger. Queries opportunity details, transforms to SAP SD format and posts via BAPI.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-14T09:23:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener","connector":"HTTP Server","config":"POST /api/create-order"},
+      {"type":"connector","label":"Query SF Opportunity","connector":"Salesforce","operation":"Query","object":"Opportunity"},
+      {"type":"map","label":"SF Opportunity → SAP SD Order","sourceFormat":"JSON","targetFormat":"XML"},
+      {"type":"connector","label":"Create SAP Sales Order","connector":"SAP S/4HANA","operation":"BAPI_SALESORDER_CREATEFROMDAT2"},
+      {"type":"decision","label":"Order Created Successfully?"},
+      {"type":"connector","label":"Update SF Opportunity Stage","connector":"Salesforce","operation":"Update","object":"Opportunity"},
+      {"type":"map","label":"SAP Response → SF Update Payload","sourceFormat":"XML","targetFormat":"JSON"},
+      {"type":"connector","label":"Log Audit Record","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Return 200 OK"}
+    ],
+    "connectorTypes": ["Salesforce","SAP S/4HANA","Database"],
+    "mapDescriptions": ["SF Opportunity to SAP SD Order Header (22 fields)","SAP BAPI Response to SF Update (8 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["Common_HTTP_Error_Handler","SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","OData Receiver (SAP S/4HANA)","Salesforce Receiver Adapter","JDBC Adapter"]
+  },
+  "Payroll_Delta_SF_to_SAP_PY": {
+    "platformId": "boomi-p1-Payroll_Delta_SF_to_SAP_PY",
+    "folder": "/Production/HR Integration",
+    "description": "Scheduled delta sync of payroll changes from SAP SuccessFactors to SAP Payroll (ERP). Processes employee compensation changes, new hires, and terminations with multi-stage error handling.",
+    "deployedTo": ["Production Atom - US East","DR Atom - US West"],
+    "lastModified": "2025-12-03T14:10:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Hourly","connector":"Timer","config":"0 * * * *"},
+      {"type":"connector","label":"Query SF Employee Deltas","connector":"SAP SuccessFactors","operation":"OData Query /EmpPayCompRecurring"},
+      {"type":"decision","label":"Records Found?"},
+      {"type":"map","label":"SF Payroll to SAP BAPI Structure"},
+      {"type":"connector","label":"SFTP Stage File Upload","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Trigger SAP Payroll Import","connector":"SAP S/4HANA","operation":"RFC Z_HR_PAYROLL_IMPORT"},
+      {"type":"decision","label":"Import Successful?"},
+      {"type":"connector","label":"Log Success to DB","connector":"Database","operation":"INSERT"},
+      {"type":"connector","label":"Get Failed Records","connector":"SAP S/4HANA","operation":"RFC Z_HR_GET_ERRORS"},
+      {"type":"map","label":"SAP Error to Notification Format"},
+      {"type":"connector","label":"Send Error Alert Email","connector":"Mail","operation":"Send"},
+      {"type":"connector","label":"Write Error Report to SFTP","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Retry Failed Records — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"map","label":"Retry Payload Transform"},
+      {"type":"stop","label":"End Batch"}
+    ],
+    "connectorTypes": ["SAP SuccessFactors","SAP S/4HANA","SFTP","Mail","Database"],
+    "mapDescriptions": [
+      "SuccessFactors Payroll Record → SAP BAPI_HRMASTER_SAVE_REPL_MULT (47 fields)",
+      "SAP Error Table → Email Alert Template (12 fields)",
+      "Retry Payload → SAP Import Format (34 fields)",
+      "Delta Response → Audit Log Structure (8 fields)",
+      "Compensation Change → SAP IT0008 Infotype (19 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"DeltaFilterScript","purpose":"Filters duplicate records and validates pay period boundaries"},
+      {"language":"Groovy","name":"RetryOrchestrator","purpose":"Builds retry batches from failed records with exponential backoff"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":3,"hasDeadLetter":true,"deadLetterPath":"/hr/payroll/dead-letter/"},
+    "dependencies": ["Common_Error_Handler","SAP-SF-PRD-Connection","SAP-S4H-PRD-Connection","SFTP-HR-Server","HR_Payroll_Notify_Template","Common_Audit_Logger"],
+    "iflowAdapters": ["Timer Start Event","SuccessFactors Adapter (OData)","RFC Receiver (SAP ERP)","SFTP Adapter","Mail Adapter","JDBC Adapter"]
+  },
+  "EDI_850_Inbound_PO": {
+    "platformId": "boomi-p1-EDI_850_Inbound_PO",
+    "folder": "/Production/EDI - External Partners",
+    "description": "Receives EDI 850 Purchase Order documents via AS2 from trading partners, validates against trading partner profiles, transforms to SAP IDOC format and posts to SAP MM.",
+    "deployedTo": ["Production Atom - US East","DR Atom - US West"],
+    "lastModified": "2025-10-28T16:45:00Z",
+    "shapes": [
+      {"type":"start","label":"AS2 Listener","connector":"AS2","config":"Inbound MDN enabled"},
+      {"type":"connector","label":"Get Trading Partner Profile","connector":"Database","operation":"SELECT"},
+      {"type":"decision","label":"Recognized Trading Partner?"},
+      {"type":"map","label":"EDI 850 → SAP IDOC ORDERS05"},
+      {"type":"connector","label":"Validate IDOC Structure — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"connector","label":"Post IDOC to SAP ERP","connector":"SAP S/4HANA","operation":"IDoc ORDERS05"},
+      {"type":"decision","label":"IDOC Posted OK?"},
+      {"type":"map","label":"Build 997 Functional Acknowledgement"},
+      {"type":"connector","label":"Send 997 AS2 Response","connector":"AS2","operation":"Send"},
+      {"type":"connector","label":"Archive Original EDI to SFTP","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Write Processing Log","connector":"Database","operation":"INSERT"},
+      {"type":"decision","label":"Duplicate Check Passed?"},
+      {"type":"map","label":"Error to Notification"},
+      {"type":"connector","label":"Alert EDI Operations Team","connector":"Mail","operation":"Send"},
+      {"type":"stop","label":"End EDI Process"}
+    ],
+    "connectorTypes": ["AS2","SAP S/4HANA","Database","SFTP","Mail"],
+    "mapDescriptions": [
+      "EDI 850 X12 → SAP IDOC ORDERS05 (68 fields — 3 segments)",
+      "IDOC Error → EDI 997 Acknowledgement (14 fields)",
+      "SAP Post Response → Audit Record (9 fields)",
+      "Error Object → Email Alert Body (11 fields)",
+      "IDOC → Archive Envelope (7 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"DuplicateCheckScript","purpose":"Checks EDI control number against dedup table within 30-day window"},
+      {"language":"Groovy","name":"TradingPartnerValidator","purpose":"Validates ISA/GS segments against registered partner profiles"},
+      {"language":"Groovy","name":"IDOCStructureValidator","purpose":"Validates IDOC segment sequencing and mandatory field presence"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":2,"hasDeadLetter":true,"deadLetterPath":"/edi/850/dead-letter/"},
+    "dependencies": ["EDI_Trading_Partner_Profiles","Common_Error_Handler","SAP-S4H-PRD-Connection","AS2-Partner-GlobalTech","EDI_Archive_SFTP"],
+    "iflowAdapters": ["AS2 Sender Adapter","IDoc Receiver (SAP ERP)","AS2 Receiver Adapter","SFTP Receiver Adapter","JDBC Adapter","Mail Adapter"]
+  },
+  "Customer_Master_Dist_Boomi": {
+    "platformId": "boomi-p1-Customer_Master_Dist_Boomi",
+    "folder": "/Production/CRM Integration",
+    "description": "Scheduled distribution of SAP Customer Master (KNA1) changes to downstream systems including Salesforce and data warehouse.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-20T11:30:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Daily 2AM","connector":"Timer","config":"0 2 * * *"},
+      {"type":"connector","label":"Extract Changed Customers — SAP","connector":"SAP S/4HANA","operation":"BAPI_CUSTOMER_GETLIST"},
+      {"type":"decision","label":"Records to Distribute?"},
+      {"type":"map","label":"SAP KNA1 → Salesforce Account"},
+      {"type":"connector","label":"Upsert Salesforce Account","connector":"Salesforce","operation":"Upsert","object":"Account"},
+      {"type":"map","label":"SAP KNA1 → DW Customer Format"},
+      {"type":"connector","label":"Load to Data Warehouse","connector":"Database","operation":"UPSERT"},
+      {"type":"stop","label":"Distribution Complete"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","Salesforce","Database"],
+    "mapDescriptions": ["SAP KNA1 Master → SF Account (18 fields)","SAP KNA1 Master → DW Customer (24 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Salesforce-CRM-Connection"],
+    "iflowAdapters": ["Timer Start Event","OData Receiver (SAP S/4HANA)","Salesforce Receiver Adapter","JDBC Adapter"]
+  },
+  "Invoice_Outbound_EDIFACT": {
+    "platformId": "boomi-p1-Invoice_Outbound_EDIFACT",
+    "folder": "/Production/EDI - External Partners",
+    "description": "Event-driven outbound EDIFACT INVOIC message generation from SAP FI billing documents to trading partners via AS2.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-05T08:15:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event Listener — SAP Billing","connector":"JMS","config":"Queue: sap.billing.invoices"},
+      {"type":"connector","label":"Fetch Invoice Details from SAP","connector":"SAP S/4HANA","operation":"BAPI_BILLINGDOC_GETDETAIL"},
+      {"type":"decision","label":"Valid Trading Partner?"},
+      {"type":"map","label":"SAP Billing → EDIFACT INVOIC D96A"},
+      {"type":"connector","label":"Send INVOIC via AS2","connector":"AS2","operation":"Send"},
+      {"type":"decision","label":"MDN Received OK?"},
+      {"type":"connector","label":"Update Invoice Status in SAP","connector":"SAP S/4HANA","operation":"RFC Z_FI_UPDATE_INVOICE_STATUS"},
+      {"type":"connector","label":"Archive EDIFACT File","connector":"SFTP","operation":"PUT"},
+      {"type":"map","label":"Build Audit Record"},
+      {"type":"connector","label":"Log to EDI Tracking DB","connector":"Database","operation":"INSERT"},
+      {"type":"connector","label":"Alert on MDN Failure","connector":"Mail","operation":"Send"},
+      {"type":"stop","label":"End Invoice Process"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","AS2","SFTP","Database","Mail"],
+    "mapDescriptions": [
+      "SAP BAPI_BILLINGDOC → EDIFACT INVOIC D96A (52 fields)",
+      "SAP FI Data → EDI Archive Envelope (6 fields)",
+      "MDN Status → SAP Invoice Status Update (4 fields)",
+      "Error Object → Email Alert (9 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"EDIFACTEnvelopeBuilder","purpose":"Builds UNA/UNB/UNG envelope segments with partner-specific interchange parameters"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":3,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","AS2-Partner-GlobalTech","EDI_Archive_SFTP","EDI_Audit_DB"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP S/4HANA)","AS2 Receiver Adapter","SFTP Adapter","JDBC Adapter","Mail Adapter"]
+  },
+  "Vendor_Master_Sync_Ariba": {
+    "platformId": "boomi-p1-Vendor_Master_Sync_Ariba",
+    "folder": "/Production/Finance Integration",
+    "description": "Scheduled sync of SAP Vendor Master (LFA1) changes to SAP Ariba Procurement platform.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-10-15T10:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Nightly","connector":"Timer","config":"0 1 * * *"},
+      {"type":"connector","label":"Query Changed Vendors — SAP","connector":"SAP S/4HANA","operation":"BAPI_VENDOR_GETLIST"},
+      {"type":"map","label":"SAP LFA1 → Ariba Supplier CSV"},
+      {"type":"connector","label":"POST Supplier to Ariba","connector":"SAP Ariba","operation":"CSV Vendor Import"},
+      {"type":"decision","label":"Import Successful?"},
+      {"type":"connector","label":"Log Sync Result","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Sync Complete"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","SAP Ariba","Database"],
+    "mapDescriptions": ["SAP LFA1 Vendor Record → Ariba Supplier CSV (16 fields)","Ariba Response → Audit Log (5 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Ariba-Procurement-Connection"],
+    "iflowAdapters": ["Timer Start Event","OData Receiver (SAP S/4HANA)","Ariba Receiver Adapter","JDBC Adapter"]
+  },
+  "Material_Master_Dist": {
+    "platformId": "boomi-p1-Material_Master_Dist",
+    "folder": "/Production/Supply Chain",
+    "description": "Event-driven Material Master (MATMAS) distribution from SAP to downstream EWM, SRM, and Ariba systems.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-08T14:22:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Listener — MATMAS IDoc","connector":"JMS","config":"Queue: sap.matmas"},
+      {"type":"map","label":"MATMAS IDoc → Normalized Material"},
+      {"type":"decision","label":"Route by Material Type"},
+      {"type":"connector","label":"Send to EWM System","connector":"SAP S/4HANA","operation":"RFC Z_EWM_MATERIAL_CREATE"},
+      {"type":"connector","label":"Send to SRM System","connector":"HTTP/REST","operation":"POST /materials"},
+      {"type":"connector","label":"Post to Ariba Catalog","connector":"SAP Ariba","operation":"Catalog Item Update"},
+      {"type":"map","label":"Normalized → Ariba Format"},
+      {"type":"connector","label":"Log Distribution Result","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Distribution Complete"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST","SAP Ariba","Database"],
+    "mapDescriptions": [
+      "MATMAS IDoc → Normalized Material Object (28 fields)",
+      "Normalized Material → Ariba Catalog Item (22 fields)",
+      "Distribution Result → Audit Record (7 fields)"
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Ariba-Procurement-Connection","SRM-REST-Connection"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP EWM)","HTTPS Receiver Adapter","Ariba Receiver Adapter","JDBC Adapter"]
+  },
+  "SalesOrder_Confirm_CRM": {
+    "platformId": "boomi-p1-SalesOrder_Confirm_CRM",
+    "folder": "/Production/CRM Integration",
+    "description": "API endpoint that accepts SAP Sales Order confirmation events and updates Salesforce CRM opportunity status.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-22T09:05:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener","connector":"HTTP Server","config":"POST /api/order-confirm"},
+      {"type":"map","label":"SAP Order Confirm → SF Opportunity Update"},
+      {"type":"connector","label":"Update Salesforce Opportunity","connector":"Salesforce","operation":"Update","object":"Opportunity"},
+      {"type":"decision","label":"Update Successful?"},
+      {"type":"connector","label":"Log Result","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Return Confirmation"}
+    ],
+    "connectorTypes": ["Salesforce","Database"],
+    "mapDescriptions": ["SAP Order Confirm Payload → SF Opportunity Update (11 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["Salesforce-CRM-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","Salesforce Receiver Adapter","JDBC Adapter"]
+  },
+  "GR_Notification_Ariba": {
+    "platformId": "boomi-p1-GR_Notification_Ariba",
+    "folder": "/Production/Supply Chain",
+    "description": "Sends Goods Receipt notifications from SAP MM to SAP Ariba for three-way match processing.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-10-30T11:00:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event — GR Posting","connector":"JMS","config":"Queue: sap.mm.gr"},
+      {"type":"connector","label":"Fetch GR Details from SAP","connector":"SAP S/4HANA","operation":"BAPI_GOODSMVT_GETDETAIL"},
+      {"type":"map","label":"SAP GR → Ariba GR Notification"},
+      {"type":"connector","label":"Post GR to Ariba cXML","connector":"SAP Ariba","operation":"ConfirmationRequest"},
+      {"type":"decision","label":"Ariba Acknowledged?"},
+      {"type":"connector","label":"Log Ariba Response","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"GR Notification Sent"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","SAP Ariba","Database"],
+    "mapDescriptions": [
+      "SAP BAPI GR → Ariba cXML ConfirmationRequest (19 fields)",
+      "Ariba Response → Audit Log (5 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"cXMLEnvelopeBuilder","purpose":"Builds cXML envelope with Ariba routing credentials"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Ariba-Procurement-Connection"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP S/4HANA)","Ariba Receiver Adapter","JDBC Adapter"]
+  },
+  "Payment_Status_Update": {
+    "platformId": "boomi-p1-Payment_Status_Update",
+    "folder": "/Production/Finance Integration",
+    "description": "REST API that receives payment status updates from the bank payment gateway and updates SAP FI payment documents.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-18T15:30:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener","connector":"HTTP Server","config":"POST /api/payment-status"},
+      {"type":"map","label":"Bank Payload → SAP Payment Update"},
+      {"type":"connector","label":"Update SAP FI Payment Document","connector":"SAP S/4HANA","operation":"BAPI_ACC_DOCUMENT_CHECK"},
+      {"type":"decision","label":"SAP Update OK?"},
+      {"type":"connector","label":"Log Status Change","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Return 200 OK"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","Database"],
+    "mapDescriptions": ["Bank Payment Gateway Response → SAP FI BAPI Input (14 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","OData Receiver (SAP S/4HANA)","JDBC Adapter"]
+  },
+  "Employee_New_Hire_SF": {
+    "platformId": "boomi-p1-Employee_New_Hire_SF",
+    "folder": "/Production/HR Integration",
+    "description": "Event-driven new hire onboarding — creates SAP HCM employee record when new hire is activated in SuccessFactors.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-12-01T09:45:00Z",
+    "shapes": [
+      {"type":"start","label":"SuccessFactors Event — NewHire","connector":"SAP SuccessFactors","operation":"Event Subscription /hireDate"},
+      {"type":"connector","label":"Fetch Full Employee Details","connector":"SAP SuccessFactors","operation":"OData EmpEmployment"},
+      {"type":"map","label":"SF Employee → SAP HCM PA40"},
+      {"type":"connector","label":"Create SAP HCM Employee","connector":"SAP S/4HANA","operation":"BAPI_EMPLOYEE_ENQUEUE"},
+      {"type":"decision","label":"Employee Created?"},
+      {"type":"connector","label":"Provision IT Access via API","connector":"HTTP/REST","operation":"POST /provision-access"},
+      {"type":"map","label":"SF Employee → IT Provisioning Request"},
+      {"type":"connector","label":"Log Onboarding Event","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Onboarding Initiated"}
+    ],
+    "connectorTypes": ["SAP SuccessFactors","SAP S/4HANA","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "SuccessFactors EmpEmployment → SAP HCM PA40 Actions (31 fields)",
+      "SF Employee → IT Provisioning Request (14 fields)",
+      "SAP HCM Response → Audit Log (6 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"PersonalDataMasker","purpose":"Masks PII fields in audit log — retains only employee ID and action type"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":2,"hasDeadLetter":false},
+    "dependencies": ["SAP-SF-PRD-Connection","SAP-S4H-PRD-Connection","IT-Provisioning-API"],
+    "iflowAdapters": ["SuccessFactors Adapter (Event Subscription)","SuccessFactors Adapter (OData)","RFC Receiver (SAP HCM)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "Inventory_Level_Sync": {
+    "platformId": "boomi-p1-Inventory_Level_Sync",
+    "folder": "/Production/Supply Chain",
+    "description": "Scheduled batch sync of SAP WM inventory levels to external WMS and e-commerce platform.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-10T06:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Every 4h","connector":"Timer","config":"0 */4 * * *"},
+      {"type":"connector","label":"Get Stock Levels from SAP WM","connector":"SAP S/4HANA","operation":"BAPI_MATERIAL_STOCK_REQ_LIST"},
+      {"type":"decision","label":"Stock Changes Found?"},
+      {"type":"map","label":"SAP Stock → WMS Inventory Format"},
+      {"type":"connector","label":"POST to External WMS","connector":"HTTP/REST","operation":"PUT /inventory/batch"},
+      {"type":"map","label":"SAP Stock → eCommerce Availability"},
+      {"type":"connector","label":"Update eCommerce Inventory","connector":"HTTP/REST","operation":"PATCH /products/availability"},
+      {"type":"connector","label":"Update Sync Timestamp","connector":"Database","operation":"UPDATE"},
+      {"type":"stop","label":"Sync Complete"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "SAP BAPI Stock Response → WMS Inventory Format (23 fields)",
+      "SAP Stock Data → eCommerce Availability JSON (11 fields)"
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","WMS-REST-API","eCommerce-Platform-API"],
+    "iflowAdapters": ["Timer Start Event","OData Receiver (SAP WM)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "Delivery_Tracking_Update": {
+    "platformId": "boomi-p1-Delivery_Tracking_Update",
+    "folder": "/Production/Supply Chain",
+    "description": "REST API endpoint that receives delivery tracking events from logistics providers and updates SAP SD delivery documents.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-25T13:20:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener — Carrier Webhook","connector":"HTTP Server","config":"POST /api/delivery-track"},
+      {"type":"map","label":"Carrier Event → SAP Delivery Update"},
+      {"type":"connector","label":"Update SAP SD Delivery","connector":"SAP S/4HANA","operation":"BAPI_DELIVERYPROCESSING_EXEC"},
+      {"type":"decision","label":"Delivery Updated?"},
+      {"type":"connector","label":"Push to Customer Portal","connector":"HTTP/REST","operation":"POST /tracking-events"},
+      {"type":"connector","label":"Log Event","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Tracking Updated"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "Carrier Webhook Payload → SAP BAPI Delivery Update (17 fields)",
+      "SAP Response → Customer Portal Event (9 fields)"
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","OData Receiver (SAP SD)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "EDI_856_ASN_Outbound": {
+    "platformId": "boomi-p1-EDI_856_ASN_Outbound",
+    "folder": "/Production/EDI - External Partners",
+    "description": "Outbound EDI 856 Advance Ship Notice generation from SAP WM goods issue events. Sends to retailer trading partners via AS2 with full carton/item detail.",
+    "deployedTo": ["Production Atom - US East","DR Atom - US West"],
+    "lastModified": "2025-11-12T10:30:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event — SAP WM Goods Issue","connector":"JMS","config":"Topic: sap.wm.goods-issue"},
+      {"type":"connector","label":"Fetch Delivery Details","connector":"SAP S/4HANA","operation":"BAPI_DELIVERYPROCESSING_EXEC"},
+      {"type":"connector","label":"Get Carton/Item Packing List","connector":"SAP S/4HANA","operation":"RFC Z_WM_GET_PACKING_LIST"},
+      {"type":"map","label":"SAP Delivery + Packing → EDI 856 HL Structure"},
+      {"type":"connector","label":"SSCC Label Lookup — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"connector","label":"Get Trading Partner EDI Settings","connector":"Database","operation":"SELECT"},
+      {"type":"decision","label":"Partner Requires 856?"},
+      {"type":"map","label":"Build EDI 856 with HL Segments"},
+      {"type":"connector","label":"Send 856 via AS2","connector":"AS2","operation":"Send"},
+      {"type":"decision","label":"MDN Received?"},
+      {"type":"connector","label":"Update SAP Shipment Status","connector":"SAP S/4HANA","operation":"RFC Z_SD_UPDATE_SHIPMENT"},
+      {"type":"connector","label":"Archive ASN to SFTP","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Log EDI Transmission","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"ASN Sent"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","AS2","Database","SFTP"],
+    "mapDescriptions": [
+      "SAP Delivery + Packing Data → EDI 856 HL Structure (74 fields — 4 loop levels)",
+      "EDI 856 Base → Partner-Specific Variant (38 fields)",
+      "SAP Shipment Response → EDI Archive Record (8 fields)",
+      "Trading Partner Config → EDI Envelope Parameters (12 fields)",
+      "EDI Send Result → Audit Log (7 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"SSCCLabelBuilder","purpose":"Generates SSCC-18 barcode values and builds hierarchical carton structure"},
+      {"language":"Groovy","name":"HL_SegmentOrchestrator","purpose":"Builds multi-level HL loop hierarchy (shipment/order/pack/item) dynamically"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":2,"hasDeadLetter":true,"deadLetterPath":"/edi/856/dead-letter/"},
+    "dependencies": ["SAP-S4H-PRD-Connection","AS2-Partner-Registry","EDI-TP-Config-DB","EDI-Archive-SFTP","Common-Error-Handler"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP WM/SD)","AS2 Receiver Adapter","SFTP Adapter","JDBC Adapter"]
+  },
+  "PO_Change_Notification": {
+    "platformId": "boomi-p1-PO_Change_Notification",
+    "folder": "/Production/Supply Chain",
+    "description": "Event-driven notification of SAP Purchase Order changes to SAP Ariba for supplier collaboration.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-10-20T09:00:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event — PO Change","connector":"JMS","config":"Queue: sap.mm.po-change"},
+      {"type":"connector","label":"Get Updated PO Details","connector":"SAP S/4HANA","operation":"BAPI_PO_GETDETAIL1"},
+      {"type":"map","label":"SAP PO Change → Ariba OrderAmendment"},
+      {"type":"connector","label":"Build cXML OrderAmendment — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"connector","label":"Send to Ariba Supplier Network","connector":"SAP Ariba","operation":"OrderAmendment"},
+      {"type":"decision","label":"Ariba Confirmed?"},
+      {"type":"connector","label":"Log Change Event","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"PO Change Notified"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","SAP Ariba","Database"],
+    "mapDescriptions": [
+      "SAP BAPI_PO_GETDETAIL1 → Ariba OrderAmendment cXML (26 fields)",
+      "Ariba Response → Audit Record (5 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"cXMLAmendmentBuilder","purpose":"Builds cXML OrderAmendment envelope with change reason codes and versioning"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Ariba-Procurement-Connection"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP MM)","Ariba Receiver Adapter","JDBC Adapter"]
+  },
+  "Cost_Center_Hierarchy_Sync": {
+    "platformId": "boomi-p1-Cost_Center_Hierarchy_Sync",
+    "folder": "/Production/Finance Integration",
+    "description": "Scheduled sync of SAP CO Cost Center hierarchy to corporate reporting and budgeting tools.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-09-10T03:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Weekly Sunday","connector":"Timer","config":"0 3 * * 0"},
+      {"type":"connector","label":"Extract Cost Center Hierarchy","connector":"SAP S/4HANA","operation":"RFC K_KOSTL_STRUCTURE_GET"},
+      {"type":"map","label":"SAP CO Hierarchy → Reporting Format"},
+      {"type":"connector","label":"Load to Reporting Tool","connector":"HTTP/REST","operation":"POST /hierarchy/import"},
+      {"type":"stop","label":"Hierarchy Sync Done"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST"],
+    "mapDescriptions": ["SAP Cost Center Node → Reporting Hierarchy Object (9 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["Timer Start Event","RFC Receiver (SAP CO)","HTTPS Receiver Adapter"]
+  },
+  "HR_Org_Structure_Publish": {
+    "platformId": "boomi-p1-HR_Org_Structure_Publish",
+    "folder": "/Production/HR Integration",
+    "description": "Scheduled publish of SAP HCM Organizational Structure to SuccessFactors, Active Directory, and downstream reporting.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-28T04:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Nightly 4AM","connector":"Timer","config":"0 4 * * *"},
+      {"type":"connector","label":"Extract Org Units from SAP HCM","connector":"SAP S/4HANA","operation":"RFC PPOSE_API_ACTION"},
+      {"type":"map","label":"SAP OM → SuccessFactors Org Structure"},
+      {"type":"connector","label":"Upsert SF MDF Org Units","connector":"SAP SuccessFactors","operation":"OData POST /FODepartment"},
+      {"type":"decision","label":"SF Sync OK?"},
+      {"type":"map","label":"SAP OM → Active Directory OU Structure"},
+      {"type":"connector","label":"Update AD via Groovy LDAP Script","connector":"Groovy","operation":"script"},
+      {"type":"map","label":"SAP OM → Reporting Hierarchy JSON"},
+      {"type":"connector","label":"Post Org Data to Reporting API","connector":"HTTP/REST","operation":"POST /org/refresh"},
+      {"type":"connector","label":"Log Sync Summary","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Org Publish Complete"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","SAP SuccessFactors","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "SAP HCM Org Unit → SF MDF Department (28 fields)",
+      "SAP OM Hierarchy → AD OU Path Structure (15 fields)",
+      "SAP Org Node → Reporting Hierarchy JSON (19 fields)",
+      "Sync Result → Audit Record (7 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"LDAPConnector","purpose":"Connects to Active Directory via JNDI LDAP to create/update OU entries"},
+      {"language":"Groovy","name":"OrgDeltaComparator","purpose":"Compares current org snapshot with previous run to generate change set only"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":2,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","SAP-SF-PRD-Connection","AD-LDAP-Connection","Reporting-API"],
+    "iflowAdapters": ["Timer Start Event","RFC Receiver (SAP HCM)","SuccessFactors Adapter (OData)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "Customer_Credit_Check": {
+    "platformId": "boomi-p1-Customer_Credit_Check",
+    "folder": "/Production/CRM Integration",
+    "description": "Synchronous API that queries SAP SD credit limit data and returns credit status to Salesforce CPQ.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-16T11:00:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener","connector":"HTTP Server","config":"GET /api/credit-check/{customerId}"},
+      {"type":"connector","label":"Get Credit Data from SAP SD","connector":"SAP S/4HANA","operation":"BAPI_CREDIT_CHECK_GET_DATA"},
+      {"type":"map","label":"SAP Credit Data → SF CPQ Response"},
+      {"type":"decision","label":"Credit Approved?"},
+      {"type":"connector","label":"Cache Result in DB","connector":"Database","operation":"UPSERT"},
+      {"type":"stop","label":"Return Credit Status"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","Database"],
+    "mapDescriptions": [
+      "SAP BAPI Credit Response → Salesforce CPQ Credit Object (12 fields)",
+      "Cache Entry → DB Credit Record (7 fields)"
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","OData Receiver (SAP SD)","JDBC Adapter"]
+  },
+  "Supplier_Invoice_Inbound": {
+    "platformId": "boomi-p1-Supplier_Invoice_Inbound",
+    "folder": "/Production/Finance Integration",
+    "description": "SFTP listener that picks up supplier invoice files (PDF + XML), validates, and posts to SAP FI for three-way match.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-30T08:00:00Z",
+    "shapes": [
+      {"type":"start","label":"SFTP Listener — Supplier Inbox","connector":"SFTP","config":"Poll /inbound/invoices every 15min"},
+      {"type":"connector","label":"Read Invoice XML","connector":"SFTP","operation":"GET"},
+      {"type":"map","label":"Supplier Invoice XML → SAP LIV Format"},
+      {"type":"connector","label":"Validate Invoice — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"decision","label":"Validation Passed?"},
+      {"type":"connector","label":"Post to SAP FI — MR8M","connector":"SAP S/4HANA","operation":"BAPI_INCOMINGINVOICE_CREATE"},
+      {"type":"decision","label":"SAP Posting OK?"},
+      {"type":"connector","label":"Move File to Processed","connector":"SFTP","operation":"RENAME"},
+      {"type":"connector","label":"Notify AP Team","connector":"Mail","operation":"Send"},
+      {"type":"map","label":"Validation Error → Alert Email"},
+      {"type":"connector","label":"Move to Error Folder","connector":"SFTP","operation":"RENAME"},
+      {"type":"connector","label":"Log Invoice Status","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Invoice Processed"}
+    ],
+    "connectorTypes": ["SFTP","SAP S/4HANA","Mail","Database"],
+    "mapDescriptions": [
+      "Supplier XML Invoice (UBL/EDIFACT) → SAP BAPI_INCOMINGINVOICE_CREATE (41 fields)",
+      "Validation Error Object → AP Team Alert Email (13 fields)",
+      "SAP Posting Response → Invoice Log Record (9 fields)",
+      "Invoice Header → Archive Index (7 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"InvoiceValidator","purpose":"Validates invoice against PO tolerances, duplicate check, and VAT number verification"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":false,"retryAttempts":0,"hasDeadLetter":true,"deadLetterPath":"/inbound/invoices/error/"},
+    "dependencies": ["SAP-S4H-PRD-Connection","SFTP-Supplier-Inbox","AP-Notification-Mail","Invoice-Audit-DB"],
+    "iflowAdapters": ["SFTP Sender Adapter","OData Receiver (SAP FI)","SFTP Adapter (Archive)","Mail Adapter","JDBC Adapter"]
+  },
+  "Product_Catalog_Sync": {
+    "platformId": "boomi-p1-Product_Catalog_Sync",
+    "folder": "/Production/Supply Chain",
+    "description": "Scheduled sync of SAP Material Master product data to e-commerce product catalog API.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-10-05T02:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Nightly","connector":"Timer","config":"0 2 * * *"},
+      {"type":"connector","label":"Get Product Data from SAP","connector":"SAP S/4HANA","operation":"BAPI_MATERIAL_GET_ALL"},
+      {"type":"map","label":"SAP Material → eCommerce Product"},
+      {"type":"connector","label":"Bulk Upsert Products via REST","connector":"HTTP/REST","operation":"POST /catalog/bulk-upsert"},
+      {"type":"decision","label":"Sync Successful?"},
+      {"type":"stop","label":"Catalog Updated"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST"],
+    "mapDescriptions": ["SAP MARA/MAKT Material Data → eCommerce Product JSON (16 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["Timer Start Event","OData Receiver (SAP MM)","HTTPS Receiver Adapter"]
+  },
+  "Sales_Quota_Upload": {
+    "platformId": "boomi-p1-Sales_Quota_Upload",
+    "folder": "/Production/CRM Integration",
+    "description": "Simple API endpoint that accepts CSV sales quota uploads from finance and creates Salesforce Quota records.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-09-15T10:00:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener — Quota Upload","connector":"HTTP Server","config":"POST /api/quotas"},
+      {"type":"map","label":"CSV Row → SF Quota Object"},
+      {"type":"connector","label":"Create SF Quota Records","connector":"Salesforce","operation":"Insert","object":"Quota__c"},
+      {"type":"stop","label":"Quotas Loaded"}
+    ],
+    "connectorTypes": ["Salesforce"],
+    "mapDescriptions": ["Finance CSV Row → Salesforce Quota__c Record (8 fields)"],
+    "scripts": [],
+    "errorHandling": {"type":"none","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["Salesforce-CRM-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","Salesforce Receiver Adapter"]
+  },
+  "Payslip_Distribution": {
+    "platformId": "boomi-p1-Payslip_Distribution",
+    "folder": "/Production/HR Integration",
+    "description": "Scheduled distribution of payslip PDFs from SAP HCM to employee self-service via SFTP and email.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-25T05:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Payroll Run Day","connector":"Timer","config":"0 6 25 * *"},
+      {"type":"connector","label":"Get Payslip List from SAP","connector":"SAP S/4HANA","operation":"RFC Z_HR_GET_PAYSLIP_LIST"},
+      {"type":"map","label":"SAP Payslip List → Distribution Batch"},
+      {"type":"decision","label":"Payslips Ready?"},
+      {"type":"connector","label":"Download Payslip PDFs — SFTP","connector":"SFTP","operation":"GET"},
+      {"type":"map","label":"Employee ID → Self-Service Portal Path"},
+      {"type":"connector","label":"Upload to Employee Portal","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Send Email Notification","connector":"Mail","operation":"Send"},
+      {"type":"connector","label":"Log Distribution Status","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Payslips Distributed"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","SFTP","Mail","Database"],
+    "mapDescriptions": [
+      "SAP Payslip List → Distribution Batch Object (12 fields)",
+      "Employee Data → Portal File Path (6 fields)",
+      "Payslip Metadata → Email Notification (9 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"PDFEncryptor","purpose":"Encrypts payslip PDFs with employee-specific password before upload to portal"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","SFTP-HR-Payslips","Employee-Portal-SFTP","HR-Notify-Mail"],
+    "iflowAdapters": ["Timer Start Event","RFC Receiver (SAP HCM)","SFTP Sender Adapter","SFTP Receiver Adapter","Mail Adapter","JDBC Adapter"]
+  },
+  "Bank_Statement_Recon": {
+    "platformId": "boomi-p1-Bank_Statement_Recon",
+    "folder": "/Production/Finance Integration",
+    "description": "Complex bank statement reconciliation — ingests MT940/CAMT.053 files from SFTP, matches to SAP FI open items, posts clearing entries, and generates exception reports.",
+    "deployedTo": ["Production Atom - US East","DR Atom - US West"],
+    "lastModified": "2025-12-05T07:00:00Z",
+    "shapes": [
+      {"type":"start","label":"SFTP Listener — Bank SFTP","connector":"SFTP","config":"Poll /bank/statements every 1h"},
+      {"type":"connector","label":"Detect File Format","connector":"Groovy","operation":"script"},
+      {"type":"decision","label":"MT940 or CAMT.053?"},
+      {"type":"map","label":"MT940 → Internal Statement Format"},
+      {"type":"map","label":"CAMT.053 → Internal Statement Format"},
+      {"type":"connector","label":"Get SAP Open Items","connector":"SAP S/4HANA","operation":"BAPI_ACITEM_SELITEMS_GET"},
+      {"type":"connector","label":"Match Algorithm — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"decision","label":"Items Matched?"},
+      {"type":"connector","label":"Post Clearing Entry to SAP","connector":"SAP S/4HANA","operation":"BAPI_ACC_GL_POSTING_POST"},
+      {"type":"connector","label":"Build Exception Report — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"map","label":"Exception Data → Report Format"},
+      {"type":"connector","label":"Email Exception Report to Finance","connector":"Mail","operation":"Send"},
+      {"type":"connector","label":"Upload Reconciled File to Archive","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Log Reconciliation Result","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Reconciliation Complete"}
+    ],
+    "connectorTypes": ["SFTP","SAP S/4HANA","Mail","Database"],
+    "mapDescriptions": [
+      "MT940 SWIFT Statement → Internal Statement Format (34 fields)",
+      "CAMT.053 ISO 20022 → Internal Statement Format (41 fields)",
+      "Matched Items → SAP Clearing BAPI Input (22 fields)",
+      "Unmatched Items → Exception Report (17 fields)",
+      "Reconciliation Summary → Finance Email (12 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"FileFormatDetector","purpose":"Detects and validates MT940 vs CAMT.053 format from first 3 lines of statement file"},
+      {"language":"Groovy","name":"ReconMatchingEngine","purpose":"Multi-rule matching engine: exact amount + ref, amount + date tolerance, fuzzy reference matching"},
+      {"language":"Groovy","name":"ExceptionReportBuilder","purpose":"Builds structured exception report with aged unmatched items and suggested actions"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":2,"hasDeadLetter":true,"deadLetterPath":"/bank/statements/failed/"},
+    "dependencies": ["SAP-S4H-PRD-Connection","Bank-SFTP-Server","Bank-Archive-SFTP","Finance-Exception-Mail","Recon-Audit-DB","Common-Error-Handler"],
+    "iflowAdapters": ["SFTP Sender Adapter","OData Receiver (SAP FI)","SFTP Receiver Adapter (Archive)","Mail Adapter","JDBC Adapter"]
+  },
+  "Service_Order_Create": {
+    "platformId": "boomi-p1-Service_Order_Create",
+    "folder": "/Production/Supply Chain",
+    "description": "API that creates SAP PM Service Orders from external field service management platform.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-18T14:00:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener","connector":"HTTP Server","config":"POST /api/service-orders"},
+      {"type":"connector","label":"Validate Equipment Number","connector":"SAP S/4HANA","operation":"BAPI_EQUI_GETLIST"},
+      {"type":"map","label":"FSM Request → SAP PM Order"},
+      {"type":"decision","label":"Equipment Valid?"},
+      {"type":"connector","label":"Create SAP PM Service Order","connector":"SAP S/4HANA","operation":"BAPI_ALM_ORDER_MAINTAIN"},
+      {"type":"connector","label":"Assign Technician — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"decision","label":"Order Created?"},
+      {"type":"connector","label":"Update FSM with SAP Order ID","connector":"HTTP/REST","operation":"PATCH /work-orders/{id}"},
+      {"type":"connector","label":"Log Service Order","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Service Order Created"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "FSM Work Order → SAP PM Order BAPI Input (29 fields)",
+      "SAP PM Response → FSM Update Payload (12 fields)",
+      "Service Order → Audit Log (8 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"TechnicianAssigner","purpose":"Queries technician availability calendar and assigns based on skill set and proximity"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","FSM-REST-API"],
+    "iflowAdapters": ["HTTPS Sender Adapter","OData Receiver (SAP PM)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "Contract_Management_Sync": {
+    "platformId": "boomi-p1-Contract_Management_Sync",
+    "folder": "/Production/Finance Integration",
+    "description": "Scheduled sync of SAP MM Contract data (ME31K/ME32K) to SAP Ariba Contract Management.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-10-22T03:30:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — Daily 3:30AM","connector":"Timer","config":"30 3 * * *"},
+      {"type":"connector","label":"Extract Changed Contracts — SAP MM","connector":"SAP S/4HANA","operation":"BAPI_CONTRACT_GETDETAIL"},
+      {"type":"map","label":"SAP MM Contract → Ariba Contract"},
+      {"type":"connector","label":"Sync to Ariba Contract Workspace","connector":"SAP Ariba","operation":"Contract Update"},
+      {"type":"decision","label":"Sync Successful?"},
+      {"type":"connector","label":"Log Contract Sync","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Contract Sync Done"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","SAP Ariba","Database"],
+    "mapDescriptions": [
+      "SAP MM Contract EKKO/EKPO → Ariba Contract Workspace (21 fields)",
+      "Ariba Response → Audit Record (5 fields)"
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Ariba-Contract-Connection"],
+    "iflowAdapters": ["Timer Start Event","OData Receiver (SAP MM)","Ariba Receiver Adapter","JDBC Adapter"]
+  },
+  "Warehouse_Transfer_Order": {
+    "platformId": "boomi-p1-Warehouse_Transfer_Order",
+    "folder": "/Production/Supply Chain",
+    "description": "Event-driven warehouse transfer order processing — creates WMS pick instructions from SAP WM Transfer Orders.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-14T16:00:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event — SAP WM Transfer Order","connector":"JMS","config":"Queue: sap.wm.transfer-order"},
+      {"type":"connector","label":"Fetch TO Details from SAP WM","connector":"SAP S/4HANA","operation":"RFC L_TO_GET_INFO"},
+      {"type":"map","label":"SAP TO → WMS Pick Instruction"},
+      {"type":"decision","label":"Priority Order?"},
+      {"type":"connector","label":"Submit Priority Pick to WMS","connector":"HTTP/REST","operation":"POST /picks/priority"},
+      {"type":"connector","label":"Submit Standard Pick to WMS","connector":"HTTP/REST","operation":"POST /picks/standard"},
+      {"type":"connector","label":"Confirm TO Release — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"decision","label":"WMS Confirmed?"},
+      {"type":"connector","label":"Update SAP WM TO Status","connector":"SAP S/4HANA","operation":"RFC L_TO_CONFIRM_CANCEL"},
+      {"type":"connector","label":"Log Transfer Event","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Transfer Order Dispatched"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "SAP WM Transfer Order → WMS Pick Instruction (26 fields)",
+      "Priority Flag Logic → WMS Routing Decision (4 fields)",
+      "WMS Confirmation → SAP TO Status Update (8 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"TOConfirmationHandler","purpose":"Handles partial confirmations and splits multi-bin TOs into individual pick tasks"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":2,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","WMS-REST-API"],
+    "iflowAdapters": ["JMS Sender Adapter","RFC Receiver (SAP WM)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "Customer_Returns_RMA": {
+    "platformId": "boomi-p1-Customer_Returns_RMA",
+    "folder": "/Production/CRM Integration",
+    "description": "RMA workflow — creates SAP SD return order from Salesforce case, triggers warehouse return receipt, and updates CRM.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-20T10:00:00Z",
+    "shapes": [
+      {"type":"start","label":"HTTPS Listener — RMA Request","connector":"HTTP Server","config":"POST /api/returns"},
+      {"type":"connector","label":"Fetch SF Case Details","connector":"Salesforce","operation":"Query","object":"Case"},
+      {"type":"map","label":"SF Case → SAP SD Return Order"},
+      {"type":"connector","label":"Create SAP VA01 Return Order","connector":"SAP S/4HANA","operation":"BAPI_SALESORDER_CREATEFROMDAT2"},
+      {"type":"decision","label":"Return Order Created?"},
+      {"type":"connector","label":"Update Salesforce Case","connector":"Salesforce","operation":"Update","object":"Case"},
+      {"type":"connector","label":"Notify Warehouse — Groovy Email","connector":"Groovy","operation":"script"},
+      {"type":"connector","label":"Log RMA Event","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"RMA Created"}
+    ],
+    "connectorTypes": ["Salesforce","SAP S/4HANA","Database"],
+    "mapDescriptions": [
+      "Salesforce Case → SAP VA01 Return Order BAPI (24 fields)",
+      "SAP Return Order → SF Case Update (9 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"WarehouseNotifier","purpose":"Builds warehouse alert email with return label barcode and expected arrival window"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["Salesforce-CRM-Connection","SAP-S4H-PRD-Connection"],
+    "iflowAdapters": ["HTTPS Sender Adapter","Salesforce Adapter (OData)","OData Receiver (SAP SD)","JDBC Adapter"]
+  },
+  "GL_Journal_Posting": {
+    "platformId": "boomi-p1-GL_Journal_Posting",
+    "folder": "/Production/Finance Integration",
+    "description": "Scheduled GL journal posting from external expense management system to SAP FI.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-01T07:00:00Z",
+    "shapes": [
+      {"type":"start","label":"Scheduled Timer — End of Day","connector":"Timer","config":"0 22 * * 1-5"},
+      {"type":"connector","label":"Get Approved Expense Reports — REST","connector":"HTTP/REST","operation":"GET /expenses/approved"},
+      {"type":"map","label":"Expense Report → SAP GL Journal"},
+      {"type":"decision","label":"Journal Entries Valid?"},
+      {"type":"connector","label":"Post GL Journal to SAP FI","connector":"SAP S/4HANA","operation":"BAPI_ACC_GL_POSTING_POST"},
+      {"type":"connector","label":"Update Expense Status","connector":"HTTP/REST","operation":"PATCH /expenses/status"},
+      {"type":"stop","label":"GL Posting Complete"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST"],
+    "mapDescriptions": [
+      "Expense Report Lines → SAP FI GL Journal BAPI (19 fields)",
+      "SAP Posting Response → Expense Status Update (5 fields)"
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","Expense-Mgmt-API"],
+    "iflowAdapters": ["Timer Start Event","HTTPS Sender Adapter (Expense API)","OData Receiver (SAP FI)"]
+  },
+  "Production_Order_Status": {
+    "platformId": "boomi-p1-Production_Order_Status",
+    "folder": "/Production/Supply Chain",
+    "description": "Event-driven publication of SAP PP Production Order status changes to MES and customer portal.",
+    "deployedTo": ["Production Atom - US East"],
+    "lastModified": "2025-11-12T12:30:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event — Production Order Status","connector":"JMS","config":"Topic: sap.pp.prod-order"},
+      {"type":"connector","label":"Get Production Order Details","connector":"SAP S/4HANA","operation":"BAPI_PRODORD_GET_DETAIL"},
+      {"type":"map","label":"SAP PP Order → MES Status Update"},
+      {"type":"connector","label":"Update MES Production Order","connector":"HTTP/REST","operation":"PUT /production-orders/{id}"},
+      {"type":"decision","label":"Customer-Visible Status?"},
+      {"type":"connector","label":"Push Status to Customer Portal — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"connector","label":"Log Status Change","connector":"Database","operation":"INSERT"},
+      {"type":"stop","label":"Status Published"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","HTTP/REST","Database"],
+    "mapDescriptions": [
+      "SAP PP Order Status → MES Order Object (18 fields)",
+      "MES Status → Customer Portal Status (8 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"CustomerPortalPublisher","purpose":"Formats status update for customer portal API with estimated completion recalculation"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasDeadLetter":false},
+    "dependencies": ["SAP-S4H-PRD-Connection","MES-REST-API"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP PP)","HTTPS Receiver Adapter","JDBC Adapter"]
+  },
+  "EDI_810_Invoice_Outbound": {
+    "platformId": "boomi-p1-EDI_810_Invoice_Outbound",
+    "folder": "/Production/EDI - External Partners",
+    "description": "Outbound EDI 810 Invoice generation from SAP SD billing documents to retailer trading partners. Handles multiple trading partner formats and compliance requirements.",
+    "deployedTo": ["Production Atom - US East","DR Atom - US West"],
+    "lastModified": "2025-12-02T10:00:00Z",
+    "shapes": [
+      {"type":"start","label":"JMS Event — SAP SD Billing","connector":"JMS","config":"Queue: sap.sd.billing"},
+      {"type":"connector","label":"Get Billing Document Details","connector":"SAP S/4HANA","operation":"BAPI_BILLINGDOC_GETDETAIL"},
+      {"type":"connector","label":"Get Trading Partner Config","connector":"Database","operation":"SELECT"},
+      {"type":"map","label":"SAP Billing → EDI 810 Standard"},
+      {"type":"connector","label":"Apply Partner Remapping — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"connector","label":"Apply Tax Compliance — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"decision","label":"EDI 810 Valid?"},
+      {"type":"connector","label":"Send 810 via AS2","connector":"AS2","operation":"Send"},
+      {"type":"decision","label":"MDN Received?"},
+      {"type":"map","label":"Build 997 Functional Acknowledgement"},
+      {"type":"connector","label":"Update SAP Invoice Status","connector":"SAP S/4HANA","operation":"RFC Z_FI_SET_EDI_STATUS"},
+      {"type":"connector","label":"Archive 810 to SFTP","connector":"SFTP","operation":"PUT"},
+      {"type":"connector","label":"Log EDI Transmission","connector":"Database","operation":"INSERT"},
+      {"type":"connector","label":"Retry on MDN Failure — Groovy","connector":"Groovy","operation":"script"},
+      {"type":"stop","label":"Invoice Transmitted"}
+    ],
+    "connectorTypes": ["SAP S/4HANA","AS2","Database","SFTP"],
+    "mapDescriptions": [
+      "SAP BAPI Billing → EDI 810 X12 Base (59 fields — ISA/GS/ST segments)",
+      "EDI 810 Base → Walmart Partner-Specific Variant (41 fields)",
+      "SAP Response → 997 Functional Acknowledgement (14 fields)",
+      "MDN Status → SAP Invoice EDI Flag (4 fields)",
+      "810 Transmission → EDI Archive Record (8 fields)"
+    ],
+    "scripts": [
+      {"language":"Groovy","name":"TradingPartnerRemapper","purpose":"Applies partner-specific EDI mapping rules from configuration database"},
+      {"language":"Groovy","name":"TaxComplianceHandler","purpose":"Validates and reformats tax segments for cross-border invoice compliance (CA/EU)"},
+      {"language":"Groovy","name":"MDNRetryOrchestrator","purpose":"Implements configurable retry with exponential backoff for MDN non-receipt"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":3,"hasDeadLetter":true,"deadLetterPath":"/edi/810/dead-letter/"},
+    "dependencies": ["SAP-S4H-PRD-Connection","AS2-Partner-Registry","EDI-TP-Config-DB","EDI-Archive-SFTP","Common-Error-Handler"],
+    "iflowAdapters": ["JMS Sender Adapter","OData Receiver (SAP SD/FI)","AS2 Receiver Adapter","SFTP Adapter","JDBC Adapter"]
+  }
+}

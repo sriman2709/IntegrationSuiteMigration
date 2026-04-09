@@ -1,0 +1,554 @@
+{
+  "Customer_360_API": {
+    "platformId": "mule-p3-Customer_360_API",
+    "appName": "fintech-customer-api",
+    "description": "API-led Customer 360 view — aggregates data from SAP, Salesforce, and credit bureau to deliver a unified customer profile.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-20T09:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"POST /customers/{id}/360","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Extract Customer ID","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"GET Customer from SAP S/4HANA","config":"SAP OData API /A_BusinessPartner"},
+      {"type":"http:request","label":"GET CRM Data from Salesforce","config":"Salesforce REST API /services/data/v58.0/sobjects/Account"},
+      {"type":"http:request","label":"GET Credit Score from Bureau","config":"Experian REST API /v1/creditReport"},
+      {"type":"ee:transform","label":"Merge Customer 360 Response","language":"DataWeave 2.0"},
+      {"type":"error-handler","label":"Global Error Handler","strategy":"on-error-propagate"},
+      {"type":"logger","label":"Audit Log — Customer 360 Request"}
+    ],
+    "connectorTypes": ["HTTP","SAP OData","Salesforce REST","External HTTP"],
+    "dataWeaveTransforms": [
+      {"name":"ExtractCustomerId","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON"},
+      {"name":"MergeCustomer360Response","complexity":"complex","inputFormat":"multi-JSON","outputFormat":"JSON","fieldMappings":42}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"Customer360Aggregator","purpose":"Merges SAP + Salesforce + Credit Bureau responses with null-safe field coalescing"},
+      {"language":"DataWeave","name":"DataNormalizer","purpose":"Normalizes address formats, phone numbers, and currency codes across 3 source systems"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":2,"hasCircuitBreaker":true},
+    "dependencies": ["SAP-S4H-HTTP-Config","Salesforce-REST-Config","CreditBureau-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (SAP OData)","HTTPS Receiver (Salesforce)","HTTPS Receiver (Credit Bureau)"]
+  },
+  "Loan_Application_Flow": {
+    "platformId": "mule-p3-Loan_Application_Flow",
+    "appName": "fintech-loan-origination",
+    "description": "Core loan application processing flow — validates applicant, performs credit checks, calculates loan terms, and triggers approval workflow across multiple downstream systems.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-12-01T14:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"POST /loans/applications","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Validate Application Payload","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"KYC Check — Identity Verification","config":"Identity Service API"},
+      {"type":"ee:transform","label":"Map KYC Response","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Credit Bureau Score Check","config":"Equifax API /v1/score"},
+      {"type":"http:request","label":"Internal Blacklist Check","config":"Compliance Service /blacklist"},
+      {"type":"ee:transform","label":"Calculate Loan Terms (DataWeave)","language":"DataWeave 2.0"},
+      {"type":"db:insert","label":"Save Application to DB","config":"PostgreSQL — loan_applications"},
+      {"type":"http:request","label":"Trigger Underwriting Workflow","config":"Underwriting API /workflow/start"},
+      {"type":"ee:transform","label":"Build Acknowledgement Response","language":"DataWeave 2.0"},
+      {"type":"error-handler","label":"Loan Validation Error Handler","strategy":"on-error-continue"},
+      {"type":"error-handler","label":"System Error Handler","strategy":"on-error-propagate"},
+      {"type":"logger","label":"Loan Application Audit Log"}
+    ],
+    "connectorTypes": ["HTTP","Database (PostgreSQL)","External HTTP APIs"],
+    "dataWeaveTransforms": [
+      {"name":"ApplicationPayloadValidator","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":28},
+      {"name":"LoanTermsCalculator","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":19},
+      {"name":"KYCResponseMapper","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":14},
+      {"name":"AcknowledgementBuilder","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":7}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"CreditScoreEvaluator","purpose":"Multi-bureau credit score aggregation with DTI ratio calculation and risk tier assignment"},
+      {"language":"DataWeave","name":"LoanTermsEngine","purpose":"Calculates APR, monthly payment, and amortization schedule based on product rules matrix"},
+      {"language":"DataWeave","name":"ComplianceValidator","purpose":"Validates application against GDPR, AML threshold rules, and regulatory lending limits"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":3,"hasCircuitBreaker":true,"hasDLQ":true},
+    "dependencies": ["KYC-Identity-Config","Equifax-API-Config","Compliance-Service-Config","PostgreSQL-Loan-DB","Underwriting-API-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (KYC)","HTTPS Receiver (Credit Bureau)","JDBC Receiver","HTTPS Receiver (Underwriting)"]
+  },
+  "Account_Statement_Batch": {
+    "platformId": "mule-p3-Account_Statement_Batch",
+    "appName": "fintech-statements-batch",
+    "description": "Monthly batch processing of account statements — extracts transactions from core banking, generates PDF statements, and delivers via secure customer portal and email.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-28T05:00:00Z",
+    "processors": [
+      {"type":"scheduler","label":"Trigger Monthly — 1st of Month 3AM","config":"0 3 1 * *"},
+      {"type":"db:select","label":"Get Active Accounts for Statement Period","config":"Core Banking DB"},
+      {"type":"batch:job","label":"Batch Statement Generation"},
+      {"type":"db:select","label":"Get Transactions per Account","config":"Transaction History DB"},
+      {"type":"ee:transform","label":"Build Statement Data Model","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Generate PDF via Statement Service","config":"Statement Service API /generate"},
+      {"type":"sftp:write","label":"Write PDF to Secure SFTP"},
+      {"type":"ee:transform","label":"Build Email Notification","language":"DataWeave 2.0"},
+      {"type":"email:send","label":"Send Statement Email Notification"},
+      {"type":"db:update","label":"Mark Statement as Delivered"},
+      {"type":"error-handler","label":"Batch Step Error Handler","strategy":"on-error-continue"}
+    ],
+    "connectorTypes": ["Database (PostgreSQL)","SFTP","Email","External HTTP"],
+    "dataWeaveTransforms": [
+      {"name":"StatementDataBuilder","complexity":"complex","inputFormat":"DB ResultSet","outputFormat":"JSON","fieldMappings":37},
+      {"name":"EmailNotificationBuilder","complexity":"medium","inputFormat":"JSON","outputFormat":"HTML","fieldMappings":14},
+      {"name":"BatchRecordMapper","complexity":"medium","inputFormat":"DB Row","outputFormat":"JSON","fieldMappings":22},
+      {"name":"SummaryAggregator","complexity":"simple","inputFormat":"JSON[]","outputFormat":"JSON","fieldMappings":9}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"TransactionAggregator","purpose":"Aggregates daily transactions into monthly summary by category with running balances"},
+      {"language":"DataWeave","name":"PDFMetadataBuilder","purpose":"Constructs PDF generation request with customer personalization and regulatory disclosures"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":false,"hasDLQ":true},
+    "dependencies": ["CoreBanking-DB-Config","Transaction-DB-Config","SFTP-Statements-Config","Statement-PDF-API","Email-SMTP-Config"],
+    "iflowAdapters": ["Timer Start Event","JDBC Adapter","SFTP Adapter","Mail Adapter","HTTPS Receiver (Statement Service)"]
+  },
+  "Payment_Notification_Event": {
+    "platformId": "mule-p3-Payment_Notification_Event",
+    "appName": "fintech-payment-events",
+    "description": "Event-driven payment notification consumer — processes Kafka payment events and notifies customers via multiple channels.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-15T10:30:00Z",
+    "processors": [
+      {"type":"kafka:message-listener","label":"Consume payments.completed Topic","config":"Kafka Cluster — payments.completed"},
+      {"type":"ee:transform","label":"Parse Payment Event","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Get Customer Notification Preferences","config":"Customer Preferences API"},
+      {"type":"choice-router","label":"Route by Notification Channel"},
+      {"type":"http:request","label":"Send Push Notification","config":"Firebase FCM API"},
+      {"type":"email:send","label":"Send Email Confirmation"},
+      {"type":"http:request","label":"Send SMS via Twilio","config":"Twilio API /2010-04-01/Messages"},
+      {"type":"kafka:publish","label":"Publish to notifications.sent Topic"},
+      {"type":"logger","label":"Payment Notification Audit"}
+    ],
+    "connectorTypes": ["Kafka","HTTP","Email"],
+    "dataWeaveTransforms": [
+      {"name":"PaymentEventParser","complexity":"medium","inputFormat":"Avro","outputFormat":"JSON","fieldMappings":18},
+      {"name":"NotificationPayloadBuilder","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":12}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"ChannelRouter","purpose":"Evaluates customer notification preferences and determines delivery channels with priority ordering"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":true,"retryAttempts":3,"hasCircuitBreaker":false,"hasDLQ":false},
+    "dependencies": ["Kafka-Cluster-Config","CustomerPrefs-API","FCM-Config","SMTP-Config","Twilio-Config"],
+    "iflowAdapters": ["Kafka Sender Adapter","HTTPS Receiver (Notifications)","Mail Adapter","Kafka Receiver Adapter"]
+  },
+  "Credit_Check_API": {
+    "platformId": "mule-p3-Credit_Check_API",
+    "appName": "fintech-credit-api",
+    "description": "Lightweight synchronous API that performs real-time credit eligibility checks for loan pre-qualification.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-10-18T11:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"GET /credit/check/{customerId}","config":"HTTPS 8443"},
+      {"type":"db:select","label":"Get Customer Credit Profile","config":"Credit DB"},
+      {"type":"http:request","label":"Live Credit Score from Bureau","config":"Credit Bureau API"},
+      {"type":"ee:transform","label":"Build Credit Decision","language":"DataWeave 2.0"},
+      {"type":"logger","label":"Credit Check Log"}
+    ],
+    "connectorTypes": ["HTTP","Database (PostgreSQL)"],
+    "dataWeaveTransforms": [
+      {"name":"CreditDecisionBuilder","complexity":"simple","inputFormat":"multi-JSON","outputFormat":"JSON","fieldMappings":11}
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":true},
+    "dependencies": ["CreditDB-Config","CreditBureau-API-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","JDBC Adapter","HTTPS Receiver (Credit Bureau)"]
+  },
+  "Document_Archive_S3": {
+    "platformId": "mule-p3-Document_Archive_S3",
+    "appName": "fintech-document-archive",
+    "description": "Document archival API that stores compliance documents to AWS S3 with metadata indexing.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-10-05T09:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"POST /documents/archive","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Extract Document Metadata","language":"DataWeave 2.0"},
+      {"type":"s3:put-object","label":"Upload Document to S3","config":"AWS S3 — fintech-docs-archive"},
+      {"type":"db:insert","label":"Index Document Metadata","config":"Document Index DB"},
+      {"type":"logger","label":"Archive Audit Log"}
+    ],
+    "connectorTypes": ["HTTP","AWS S3","Database"],
+    "dataWeaveTransforms": [
+      {"name":"DocumentMetadataExtractor","complexity":"simple","inputFormat":"multipart","outputFormat":"JSON","fieldMappings":9}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"S3KeyBuilder","purpose":"Generates hierarchical S3 key from document type, date, and customer ID"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":false},
+    "dependencies": ["AWS-S3-Config","DocumentIndex-DB-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","Amazon S3 Adapter","JDBC Adapter"]
+  },
+  "Customer_Onboarding_Flow": {
+    "platformId": "mule-p3-Customer_Onboarding_Flow",
+    "appName": "fintech-onboarding",
+    "description": "End-to-end customer onboarding orchestration — creates accounts in SAP FSCM, Salesforce, and core banking with KYC verification.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-12-02T09:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"POST /customers/onboard","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Validate Onboarding Payload","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"KYC Identity Verification","config":"KYC Service API"},
+      {"type":"http:request","label":"AML Screening Check","config":"AML Service API"},
+      {"type":"ee:transform","label":"Map to SAP FSCM Customer","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Create SAP FSCM Customer","config":"SAP S/4HANA OData"},
+      {"type":"salesforce:create","label":"Create Salesforce Account","config":"Salesforce CRM"},
+      {"type":"ee:transform","label":"Map to Core Banking Account","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Open Core Banking Account","config":"Core Banking API"},
+      {"type":"db:insert","label":"Log Onboarding Result","config":"Onboarding DB"},
+      {"type":"error-handler","label":"KYC Failure Handler","strategy":"on-error-continue"},
+      {"type":"logger","label":"Onboarding Audit Log"}
+    ],
+    "connectorTypes": ["HTTP","Salesforce","Database"],
+    "dataWeaveTransforms": [
+      {"name":"OnboardingPayloadValidator","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":31},
+      {"name":"SAPCustomerMapper","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":24},
+      {"name":"CoreBankingAccountMapper","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":18}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"RiskTierAssigner","purpose":"Assigns customer risk tier based on KYC/AML scores and product eligibility"},
+      {"language":"DataWeave","name":"OnboardingOrchestrator","purpose":"Handles partial onboarding rollback if downstream system creation fails"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":2,"hasCircuitBreaker":true,"hasDLQ":false},
+    "dependencies": ["KYC-Service-Config","AML-Service-Config","SAP-S4H-Config","Salesforce-Config","CoreBanking-Config","Onboarding-DB-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (KYC/AML)","OData Receiver (SAP FSCM)","Salesforce Receiver Adapter","JDBC Adapter"]
+  },
+  "Trade_Settlement_Batch": {
+    "platformId": "mule-p3-Trade_Settlement_Batch",
+    "appName": "fintech-trade-settlement",
+    "description": "High-volume overnight trade settlement batch — processes securities transactions, reconciles positions, updates core banking ledger, and generates regulatory reports.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-30T22:00:00Z",
+    "processors": [
+      {"type":"scheduler","label":"Trigger Nightly 10PM","config":"0 22 * * 1-5"},
+      {"type":"db:select","label":"Load Pending Trades from Trade DB","config":"Trade DB — pending_settlements"},
+      {"type":"batch:job","label":"Settlement Processing Batch"},
+      {"type":"db:select","label":"Get Trade Position per Security","config":"Position DB"},
+      {"type":"ee:transform","label":"Calculate Net Settlement Amount","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"CSD Settlement via SWIFT MX","config":"SWIFT Alliance API"},
+      {"type":"ee:transform","label":"Build SAP FI Journal Entry","language":"DataWeave 2.0"},
+      {"type":"db:insert","label":"Post to Ledger DB","config":"GL Ledger DB"},
+      {"type":"sftp:write","label":"Write SWIFT MT940 Confirmation","config":"SFTP — /settlements/confirmed/"},
+      {"type":"ee:transform","label":"Build Regulatory MiFID II Report","language":"DataWeave 2.0"},
+      {"type":"sftp:write","label":"Submit Regulatory Report","config":"SFTP — /regulatory/mifid2/"},
+      {"type":"error-handler","label":"Trade Failure Handler — DLQ","strategy":"on-error-propagate"},
+      {"type":"db:update","label":"Update Settlement Status"}
+    ],
+    "connectorTypes": ["Database","SFTP","HTTP (SWIFT)"],
+    "dataWeaveTransforms": [
+      {"name":"SettlementAmountCalculator","complexity":"complex","inputFormat":"DB ResultSet","outputFormat":"JSON","fieldMappings":41},
+      {"name":"SWIFTMXMessageBuilder","complexity":"complex","inputFormat":"JSON","outputFormat":"XML","fieldMappings":38},
+      {"name":"SAPJournalEntryBuilder","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":29},
+      {"name":"MiFIDIIReportBuilder","complexity":"complex","inputFormat":"JSON","outputFormat":"XML","fieldMappings":44},
+      {"name":"PositionReconciler","complexity":"medium","inputFormat":"JSON[]","outputFormat":"JSON","fieldMappings":22}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"NetSettlementEngine","purpose":"Multilateral netting engine — calculates net obligations across counterparties per settlement date"},
+      {"language":"DataWeave","name":"SWIFTMXEnvelopeBuilder","purpose":"Builds ISO 20022 pacs.008/pacs.002 SWIFT MX messages with BIC routing and amount validation"},
+      {"language":"DataWeave","name":"RegulatoryReportCompiler","purpose":"Compiles MiFID II transaction reporting fields (50+ mandatory attributes) with LEI resolution"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":2,"hasCircuitBreaker":false,"hasDLQ":true},
+    "dependencies": ["TradeDB-Config","PositionDB-Config","SWIFT-Alliance-Config","GL-Ledger-DB-Config","Settlement-SFTP-Config","Regulatory-SFTP-Config"],
+    "iflowAdapters": ["Timer Start Event","JDBC Adapter","HTTPS Receiver (SWIFT)","SFTP Adapter","SFTP Receiver (Regulatory)"]
+  },
+  "Fraud_Detection_Event": {
+    "platformId": "mule-p3-Fraud_Detection_Event",
+    "appName": "fintech-fraud-detection",
+    "description": "Real-time fraud detection event processor — consumes transaction events from Kafka and invokes ML fraud scoring.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-22T16:00:00Z",
+    "processors": [
+      {"type":"kafka:message-listener","label":"Consume transactions.realtime Topic"},
+      {"type":"ee:transform","label":"Parse Transaction Event","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Invoke Fraud ML Scoring API","config":"ML Platform API /score"},
+      {"type":"ee:transform","label":"Evaluate Fraud Score (DataWeave)","language":"DataWeave 2.0"},
+      {"type":"choice-router","label":"Route by Risk Level"},
+      {"type":"kafka:publish","label":"Publish to fraud.alerts Topic"},
+      {"type":"http:request","label":"Block Transaction — Core Banking","config":"Core Banking API /transactions/block"},
+      {"type":"db:insert","label":"Log Fraud Event","config":"Fraud DB"},
+      {"type":"logger","label":"Fraud Detection Audit"}
+    ],
+    "connectorTypes": ["Kafka","HTTP","Database"],
+    "dataWeaveTransforms": [
+      {"name":"TransactionEventParser","complexity":"medium","inputFormat":"Avro","outputFormat":"JSON","fieldMappings":22},
+      {"name":"FraudScoreEvaluator","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":17}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"RiskLevelRouter","purpose":"Multi-factor risk evaluation combining ML score, velocity checks, and geo-anomaly flags"},
+      {"language":"DataWeave","name":"AlertPayloadBuilder","purpose":"Builds fraud alert payload with evidence chain for analyst review queue"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":true,"hasDLQ":false},
+    "dependencies": ["Kafka-Cluster-Config","ML-Platform-Config","CoreBanking-API-Config","FraudDB-Config"],
+    "iflowAdapters": ["Kafka Sender Adapter","HTTPS Receiver (ML Scoring)","Kafka Receiver Adapter","JDBC Adapter"]
+  },
+  "KYC_Document_Check": {
+    "platformId": "mule-p3-KYC_Document_Check",
+    "appName": "fintech-kyc",
+    "description": "KYC document verification API — validates identity documents against government databases and updates compliance status.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-05T14:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"POST /kyc/verify","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Extract Document Fields","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"OCR Document Scan","config":"OCR Service API /scan"},
+      {"type":"http:request","label":"Government Database Verification","config":"Gov DB API /verify"},
+      {"type":"ee:transform","label":"Build KYC Result","language":"DataWeave 2.0"},
+      {"type":"db:update","label":"Update Customer KYC Status","config":"Compliance DB"},
+      {"type":"db:insert","label":"Log KYC Verification","config":"Audit DB"},
+      {"type":"logger","label":"KYC Audit Log"}
+    ],
+    "connectorTypes": ["HTTP","Database"],
+    "dataWeaveTransforms": [
+      {"name":"DocumentFieldExtractor","complexity":"medium","inputFormat":"multipart","outputFormat":"JSON","fieldMappings":16},
+      {"name":"KYCResultBuilder","complexity":"medium","inputFormat":"multi-JSON","outputFormat":"JSON","fieldMappings":13}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"KYCStatusEvaluator","purpose":"Evaluates OCR confidence scores and gov DB match rates to determine pass/fail/review"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":true,"retryAttempts":2,"hasCircuitBreaker":false},
+    "dependencies": ["OCR-Service-Config","GovDB-API-Config","Compliance-DB-Config","Audit-DB-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (OCR)","HTTPS Receiver (Gov DB)","JDBC Adapter"]
+  },
+  "Interest_Calc_Scheduler": {
+    "platformId": "mule-p3-Interest_Calc_Scheduler",
+    "appName": "fintech-interest-calc",
+    "description": "Daily interest accrual scheduler — calculates and posts daily accruals for savings and loan accounts.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-10-12T01:00:00Z",
+    "processors": [
+      {"type":"scheduler","label":"Trigger Daily — 1AM","config":"0 1 * * *"},
+      {"type":"db:select","label":"Get Active Accounts for Accrual","config":"Core Banking DB"},
+      {"type":"ee:transform","label":"Calculate Accrual Amount","language":"DataWeave 2.0"},
+      {"type":"db:insert","label":"Post Accrual Entry","config":"GL DB"},
+      {"type":"logger","label":"Interest Accrual Log"}
+    ],
+    "connectorTypes": ["Database"],
+    "dataWeaveTransforms": [
+      {"name":"AccrualCalculator","complexity":"simple","inputFormat":"DB Row","outputFormat":"JSON","fieldMappings":10}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"DailyAccrualEngine","purpose":"Computes daily interest using 365/360 day count convention with product rate tables"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":false},
+    "dependencies": ["CoreBanking-DB-Config","GL-DB-Config"],
+    "iflowAdapters": ["Timer Start Event","JDBC Adapter"]
+  },
+  "Regulatory_Report_File": {
+    "platformId": "mule-p3-Regulatory_Report_File",
+    "appName": "fintech-regulatory",
+    "description": "Scheduled generation and submission of regulatory reports (Basel III LCR/NSFR) via SFTP to regulator.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-28T04:00:00Z",
+    "processors": [
+      {"type":"scheduler","label":"Trigger Monthly","config":"0 5 1 * *"},
+      {"type":"db:select","label":"Query Liquidity Data","config":"Risk DB"},
+      {"type":"db:select","label":"Query Funding Data","config":"Funding DB"},
+      {"type":"ee:transform","label":"Build Basel III LCR Report","language":"DataWeave 2.0"},
+      {"type":"ee:transform","label":"Build NSFR Report","language":"DataWeave 2.0"},
+      {"type":"sftp:write","label":"Submit LCR to Regulator SFTP"},
+      {"type":"sftp:write","label":"Submit NSFR to Regulator SFTP"},
+      {"type":"db:insert","label":"Log Submission Record"}
+    ],
+    "connectorTypes": ["Database","SFTP"],
+    "dataWeaveTransforms": [
+      {"name":"LCRReportBuilder","complexity":"complex","inputFormat":"DB ResultSet","outputFormat":"XML","fieldMappings":34},
+      {"name":"NSFRReportBuilder","complexity":"medium","inputFormat":"DB ResultSet","outputFormat":"XML","fieldMappings":27},
+      {"name":"SubmissionRecordBuilder","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":8}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"BaselCalculationEngine","purpose":"Applies HQLA haircuts, run-off rates, and stable funding factors per Basel III rules"}
+    ],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":false},
+    "dependencies": ["RiskDB-Config","FundingDB-Config","Regulator-SFTP-Config"],
+    "iflowAdapters": ["Timer Start Event","JDBC Adapter","SFTP Adapter"]
+  },
+  "Branch_Data_Sync": {
+    "platformId": "mule-p3-Branch_Data_Sync",
+    "appName": "fintech-branch-sync",
+    "description": "Scheduled sync of branch and ATM network data from core banking to customer-facing mobile app API.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-10-08T03:00:00Z",
+    "processors": [
+      {"type":"scheduler","label":"Trigger Nightly — 3AM","config":"0 3 * * *"},
+      {"type":"http:request","label":"GET Branches from Core Banking","config":"Core Banking API /branches"},
+      {"type":"ee:transform","label":"Map Branch Data for Mobile API","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"PUT Branch Data to Mobile API","config":"Mobile Backend API /branches/sync"},
+      {"type":"db:update","label":"Update Sync Timestamp"},
+      {"type":"logger","label":"Branch Sync Log"}
+    ],
+    "connectorTypes": ["HTTP","Database"],
+    "dataWeaveTransforms": [
+      {"name":"BranchDataMapper","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":13},
+      {"name":"ATMAvailabilityMapper","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":8}
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":false},
+    "dependencies": ["CoreBanking-API-Config","MobileBackend-API-Config","SyncStatus-DB-Config"],
+    "iflowAdapters": ["Timer Start Event","HTTPS Sender Adapter (Core Banking)","HTTPS Receiver (Mobile API)","JDBC Adapter"]
+  },
+  "Card_Transaction_Listener": {
+    "platformId": "mule-p3-Card_Transaction_Listener",
+    "appName": "fintech-card-processing",
+    "description": "JMS listener for card authorization events — validates, enriches, and routes card transaction authorizations.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-18T12:00:00Z",
+    "processors": [
+      {"type":"jms:listener","label":"Consume card.authorizations Queue"},
+      {"type":"ee:transform","label":"Parse ISO 8583 Card Message","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Check Card Status","config":"Card Management API /cards/{cardNumber}/status"},
+      {"type":"choice-router","label":"Route by Transaction Type"},
+      {"type":"http:request","label":"Post to Core Banking","config":"Core Banking API /transactions"},
+      {"type":"jms:publish","label":"Publish to card.responses Queue"},
+      {"type":"db:insert","label":"Log Transaction"}
+    ],
+    "connectorTypes": ["JMS","HTTP","Database"],
+    "dataWeaveTransforms": [
+      {"name":"ISO8583Parser","complexity":"complex","inputFormat":"ISO8583 Binary","outputFormat":"JSON","fieldMappings":24},
+      {"name":"AuthorizationResponseBuilder","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":14}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"ISO8583Decoder","purpose":"Decodes ISO 8583 bitmap fields and maps to normalized card transaction object"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":true},
+    "dependencies": ["JMS-Broker-Config","CardMgmt-API-Config","CoreBanking-API-Config","Transaction-DB-Config"],
+    "iflowAdapters": ["JMS Sender Adapter","HTTPS Receiver (Card Mgmt)","HTTPS Receiver (Core Banking)","JMS Receiver Adapter","JDBC Adapter"]
+  },
+  "Customer_Profile_Update": {
+    "platformId": "mule-p3-Customer_Profile_Update",
+    "appName": "fintech-customer-api",
+    "description": "Simple API to update customer profile changes across SAP FSCM and Salesforce.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-10-25T11:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"PATCH /customers/{id}","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Validate and Map Update","language":"DataWeave 2.0"},
+      {"type":"salesforce:update","label":"Update Salesforce Account","config":"Salesforce CRM"},
+      {"type":"http:request","label":"Update SAP Business Partner","config":"SAP OData /A_BusinessPartner"},
+      {"type":"logger","label":"Profile Update Audit Log"}
+    ],
+    "connectorTypes": ["HTTP","Salesforce"],
+    "dataWeaveTransforms": [
+      {"name":"ProfileUpdateMapper","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":11}
+    ],
+    "scripts": [],
+    "errorHandling": {"type":"basic","hasRetry":false,"retryAttempts":0,"hasCircuitBreaker":false},
+    "dependencies": ["Salesforce-Config","SAP-S4H-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","Salesforce Receiver Adapter","OData Receiver (SAP)"]
+  },
+  "ATM_Network_Integration": {
+    "platformId": "mule-p3-ATM_Network_Integration",
+    "appName": "fintech-atm-integration",
+    "description": "ATM network event processor — handles cash withdrawal events from ATM network, posts to core banking, and updates real-time ATM cash levels.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-20T10:00:00Z",
+    "processors": [
+      {"type":"jms:listener","label":"Consume atm.transactions Queue"},
+      {"type":"ee:transform","label":"Parse ATM Transaction Event","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Validate ATM Terminal Status","config":"ATM Management API"},
+      {"type":"choice-router","label":"Route by Transaction Type"},
+      {"type":"http:request","label":"Post Withdrawal to Core Banking","config":"Core Banking API /withdrawals"},
+      {"type":"http:request","label":"Post Deposit to Core Banking","config":"Core Banking API /deposits"},
+      {"type":"ee:transform","label":"Build Cash Level Update","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Update ATM Cash Level","config":"ATM Mgmt API /cash-levels"},
+      {"type":"jms:publish","label":"Publish to atm.receipts Queue"},
+      {"type":"db:insert","label":"Log ATM Transaction"},
+      {"type":"error-handler","label":"ATM Timeout Handler","strategy":"on-error-continue"},
+      {"type":"logger","label":"ATM Transaction Audit"}
+    ],
+    "connectorTypes": ["JMS","HTTP","Database"],
+    "dataWeaveTransforms": [
+      {"name":"ATMEventParser","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":19},
+      {"name":"CashLevelCalculator","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":11},
+      {"name":"ReceiptBuilder","complexity":"simple","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":9}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"ATMTransactionRouter","purpose":"Routes based on ATM transaction type code with timeout compensation logic"},
+      {"language":"DataWeave","name":"CashReplenishmentAlert","purpose":"Calculates when ATM will reach critical cash threshold and triggers replenishment notification"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":3,"hasCircuitBreaker":true},
+    "dependencies": ["JMS-Broker-Config","ATMMgmt-API-Config","CoreBanking-API-Config","ATM-Transaction-DB"],
+    "iflowAdapters": ["JMS Sender Adapter","HTTPS Receiver (ATM Mgmt)","HTTPS Receiver (Core Banking)","JMS Receiver Adapter","JDBC Adapter"]
+  },
+  "Mortgage_Pipeline_Sync": {
+    "platformId": "mule-p3-Mortgage_Pipeline_Sync",
+    "appName": "fintech-mortgage",
+    "description": "Scheduled sync of mortgage pipeline data from LOS (Loan Origination System) to Salesforce and SAP reporting.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-11-25T06:00:00Z",
+    "processors": [
+      {"type":"scheduler","label":"Trigger Every 4h","config":"0 */4 * * 1-5"},
+      {"type":"http:request","label":"GET Pipeline from LOS","config":"LOS API /pipeline/active"},
+      {"type":"db:select","label":"Get Previous Pipeline Snapshot","config":"Pipeline DB"},
+      {"type":"ee:transform","label":"Calculate Delta Changes","language":"DataWeave 2.0"},
+      {"type":"salesforce:upsert","label":"Sync Opportunities to Salesforce","config":"Salesforce CRM"},
+      {"type":"ee:transform","label":"Build SAP Loan Reporting Data","language":"DataWeave 2.0"},
+      {"type":"db:upsert","label":"Load to Loan Reporting DB","config":"Reporting DB"},
+      {"type":"db:update","label":"Update Pipeline Snapshot"},
+      {"type":"logger","label":"Pipeline Sync Log"}
+    ],
+    "connectorTypes": ["HTTP","Salesforce","Database"],
+    "dataWeaveTransforms": [
+      {"name":"PipelineDeltaCalculator","complexity":"complex","inputFormat":"multi-JSON","outputFormat":"JSON","fieldMappings":29},
+      {"name":"SFOpportunityMapper","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":22},
+      {"name":"SAPLoanReportMapper","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":18}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"DeltaComparator","purpose":"Deep comparison of LOS and Salesforce records to generate minimal change set"},
+      {"language":"DataWeave","name":"PipelineMetricsBuilder","purpose":"Calculates pipeline velocity, conversion rates, and weighted value by stage"}
+    ],
+    "errorHandling": {"type":"try_catch","hasRetry":true,"retryAttempts":2,"hasCircuitBreaker":false},
+    "dependencies": ["LOS-API-Config","Salesforce-Config","Pipeline-DB-Config","Reporting-DB-Config"],
+    "iflowAdapters": ["Timer Start Event","HTTPS Sender Adapter (LOS)","Salesforce Receiver Adapter","JDBC Adapter"]
+  },
+  "Insurance_Claim_Flow": {
+    "platformId": "mule-p3-Insurance_Claim_Flow",
+    "appName": "fintech-insurance",
+    "description": "Insurance claim processing orchestration — validates claim, assesses fraud risk, routes for approval, and initiates payment via SAP FI.",
+    "runtime": "4.4.0",
+    "environment": "Production",
+    "lastModified": "2025-12-03T10:00:00Z",
+    "processors": [
+      {"type":"http:listener","label":"POST /claims/submit","config":"HTTPS 8443"},
+      {"type":"ee:transform","label":"Validate Claim Payload","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Get Policy Details","config":"Policy Management API /policies/{policyId}"},
+      {"type":"http:request","label":"Fraud Risk Score","config":"Fraud ML API /claims/score"},
+      {"type":"ee:transform","label":"Evaluate Claim Eligibility","language":"DataWeave 2.0"},
+      {"type":"choice-router","label":"Route by Claim Amount and Risk"},
+      {"type":"http:request","label":"Auto-Approve Low Value Claim","config":"Claims Approval API /auto-approve"},
+      {"type":"http:request","label":"Queue for Manual Review","config":"Claims Review API /queue"},
+      {"type":"ee:transform","label":"Build SAP Payment Request","language":"DataWeave 2.0"},
+      {"type":"http:request","label":"Initiate Payment — SAP FI","config":"SAP S/4HANA OData /A_Payment"},
+      {"type":"db:insert","label":"Log Claim Processing"},
+      {"type":"error-handler","label":"Fraud Block Handler","strategy":"on-error-continue"},
+      {"type":"error-handler","label":"System Error Handler","strategy":"on-error-propagate"},
+      {"type":"logger","label":"Claims Processing Audit Log"}
+    ],
+    "connectorTypes": ["HTTP","SAP OData","Database"],
+    "dataWeaveTransforms": [
+      {"name":"ClaimPayloadValidator","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":36},
+      {"name":"ClaimEligibilityEvaluator","complexity":"complex","inputFormat":"multi-JSON","outputFormat":"JSON","fieldMappings":28},
+      {"name":"SAPPaymentRequestBuilder","complexity":"complex","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":31},
+      {"name":"ClaimApprovalRouter","complexity":"medium","inputFormat":"JSON","outputFormat":"JSON","fieldMappings":14}
+    ],
+    "scripts": [
+      {"language":"DataWeave","name":"ClaimFraudEvaluator","purpose":"Combines fraud ML score with claim history, policy anomaly flags, and velocity checks"},
+      {"language":"DataWeave","name":"AutoApprovalEngine","purpose":"Applies product-specific auto-approval rules matrix with amount thresholds and risk bands"},
+      {"language":"DataWeave","name":"RegulatoryComplianceChecker","purpose":"Validates claim against FCA/EIOPA regulatory requirements and Solvency II reporting fields"}
+    ],
+    "errorHandling": {"type":"multi_try_catch","hasRetry":true,"retryAttempts":3,"hasCircuitBreaker":true,"hasDLQ":true},
+    "dependencies": ["PolicyMgmt-Config","FraudML-Config","ClaimsApproval-Config","SAP-S4H-Config","Claims-DB-Config"],
+    "iflowAdapters": ["HTTPS Sender Adapter","HTTPS Receiver (Policy)","HTTPS Receiver (Fraud ML)","OData Receiver (SAP FI)","JDBC Adapter"]
+  }
+}
