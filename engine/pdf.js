@@ -63,7 +63,7 @@ async function generatePDFReport(project, artifacts, stats) {
       doc.on('error', reject);
 
       // ── Pages
-      buildCoverPage(doc, project, stats);
+      buildCoverPage(doc, project, artifacts, stats);
       doc.addPage();
       buildExecutiveSummary(doc, project, artifacts, stats);
       doc.addPage();
@@ -86,7 +86,7 @@ async function generatePDFReport(project, artifacts, stats) {
 
 // ── PAGE 1: Cover ─────────────────────────────────────────────────────────────
 
-function buildCoverPage(doc, project, stats) {
+function buildCoverPage(doc, project, artifacts, stats) {
   // Full-bleed dark navy header band
   fillColor(doc, C.navyDark).rect(0, 0, W, 320).fill();
 
