@@ -37,10 +37,11 @@ class BoomiConnector {
   getMode() { return this.mode; }
 
   // ── Auth header ────────────────────────────────────────────────────────────
-  _authHeader() {
-    // Boomi Basic Auth: BOOMI_{accountId}@{username}:{apiToken}
-    const raw = `BOOMI_${this.accountId}@${this.username}:${this.token}`;
-    return `Basic ${Buffer.from(raw).toString('base64')}`;
+  _authHeader(username, token) {
+    // Boomi AtomSphere API documented format: BOOMI_{accountId}@{username}:{apiToken}
+    const u = username || this.username;
+    const t = token    || this.token;
+    return `Basic ${Buffer.from(`BOOMI_${this.accountId}@${u}:${t}`).toString('base64')}`;
   }
 
   // ── Public: get enriched data for one artifact ─────────────────────────────
@@ -57,6 +58,8 @@ class BoomiConnector {
 
   // ── Public: test connection validity ──────────────────────────────────────
   async testConnection(config) {
+    // Always attempt real test if explicit credentials supplied
+    if (config?.accountId && config?.username && config?.token) return this._realTestConnection(config);
     if (this.mode === 'real') return this._realTestConnection(config);
     return { success: true, mode: 'mock', message: 'Mock mode — set BOOMI_ACCOUNT_ID, BOOMI_USERNAME, BOOMI_TOKEN to connect live', accountId: 'mock' };
   }
@@ -253,13 +256,32 @@ class BoomiConnector {
     const acct  = config?.accountId || this.accountId;
     const user  = config?.username  || this.username;
     const token = config?.token     || this.token;
-    const auth  = `Basic ${Buffer.from(`BOOMI_${acct}@${user}:${token}`).toString('base64')}`;
+    // Build auth using supplied creds (may differ from env-loaded creds)
+    const raw  = `BOOMI_${acct}@${user}:${token}`;
+    const auth = `Basic ${Buffer.from(raw).toString('base64')}`;
     try {
+      // Test via Atom endpoint — lightweight connectivity check
       const resp = await fetch(`${BOOMI_BASE}/${acct}/Atom`, {
         headers: { 'Authorization': auth, 'Accept': 'application/json' },
         timeout: 8000
       });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+      if (!resp.ok) {
+        const body = await resp.text();
+        // Try Process/query as fallback test (some trial accounts have no Atoms)
+        if (resp.status === 403 || resp.status === 404) {
+          const resp2 = await fetch(`${BOOMI_BASE}/${acct}/Process/query`, {
+            method: 'POST',
+            headers: { 'Authorization': auth, 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ QueryFilter: { expression: { operator: 'and', nestedExpression: [{ property: 'deleted', operator: 'EQUALS', argument: ['false'] }] } } }),
+            timeout: 8000
+          });
+          if (resp2.ok) {
+            const d2 = await resp2.json();
+            return { success: true, mode: 'real', accountId: acct, atoms: [], atomCount: 0, processCount: (d2.result||[]).length, message: 'Connected — no Atoms deployed yet' };
+          }
+        }
+        throw new Error(`HTTP ${resp.status}: ${body}`);
+      }
       const data  = await resp.json();
       const atoms = (data.result || []).map(a => a.name || a['@name'] || 'Atom');
       return { success: true, mode: 'real', accountId: acct, atoms, atomCount: atoms.length };
