@@ -48,7 +48,7 @@ async function parseAndPersist(filePath, originalName, projectId, sourceName) {
 
 // ── Deep parser entry point — handles ZIP or single XML ───────────────────────
 async function deepParse(filePath, originalName) {
-  const isZip = originalName.endsWith('.zip') || filePath.endsWith('.zip');
+  const isZip = originalName.endsWith('.zip') || originalName.endsWith('.jar') || filePath.endsWith('.zip') || filePath.endsWith('.jar');
   if (isZip) return parseProjectZip(filePath);
   return parseSingleXml(filePath);
 }
