@@ -59,6 +59,21 @@ async function parseProjectZip(zipPath) {
   const entries    = zip.getEntries();
   const artifacts  = [];
 
+  // If the ZIP only wraps a single JAR, extract and recurse into it
+  const innerJar = entries.find(e => e.entryName.endsWith('.jar') && !e.entryName.includes('/'));
+  if (innerJar && entries.filter(e => !e.isDirectory).length === 1) {
+    const tmpJar = zipPath + '_inner.jar';
+    try {
+      fs.writeFileSync(tmpJar, innerJar.getData());
+      const result = await parseProjectZip(tmpJar);
+      fs.unlinkSync(tmpJar);
+      return result;
+    } catch (e) {
+      if (fs.existsSync(tmpJar)) fs.unlinkSync(tmpJar);
+      console.warn('[MuleSoft] Failed to parse inner JAR:', e.message);
+    }
+  }
+
   // Find mule-artifact.json for project metadata
   let projectMeta = {};
   const metaEntry = entries.find(e => e.entryName.endsWith('mule-artifact.json'));
@@ -96,7 +111,15 @@ async function parseProjectZip(zipPath) {
     });
   }
 
-  return artifacts.length > 0 ? artifacts : fallbackArtifacts(zipPath);
+  // Deduplicate by flow name — same XML can appear at root + src/main/mule/
+  const seen = new Set();
+  const unique = artifacts.filter(a => {
+    if (seen.has(a.name)) return false;
+    seen.add(a.name);
+    return true;
+  });
+
+  return unique.length > 0 ? unique : fallbackArtifacts(zipPath);
 }
 
 // ── Parse single mule-config XML ─────────────────────────────────────────────
@@ -160,7 +183,7 @@ function analyseFlow(flow, artifactType, projectMeta, subFlowCount, hasGlobalErr
 
     // Trigger detection
     if (k.includes('listener') || k.includes('http:listener'))         { triggerType = 'API';      connectorTypes.add('HTTP'); connectorsCount++; }
-    if (k === 'scheduler' || k.includes('poll') || k.includes('cron')) { triggerType = 'Schedule'; }
+    if (k === 'scheduler' || k.includes('poll') || k.includes('cron') || k === 'fixed-frequency') { triggerType = 'Schedule'; }
     if (k.includes('jms') && k.includes('listener'))                   { triggerType = 'Event';    connectorTypes.add('JMS'); connectorsCount++; }
     if (k.includes('kafka') && (k.includes('listener') || k.includes('message'))) { triggerType = 'Event'; connectorTypes.add('Kafka'); connectorsCount++; }
     if (k.includes('file:') && k.includes('listener'))                 { triggerType = 'Listener'; connectorTypes.add('SFTP'); connectorsCount++; }
@@ -178,6 +201,8 @@ function analyseFlow(flow, artifactType, projectMeta, subFlowCount, hasGlobalErr
     if (k.includes('s3:') || k.includes('aws:'))                       { connectorTypes.add('S3'); connectorsCount++; }
     if (k.includes('workday:'))                                         { connectorTypes.add('Workday'); connectorsCount++; }
     if (k.includes('servicenow:'))                                      { connectorTypes.add('ServiceNow'); connectorsCount++; }
+    if (k.includes('mongo:') || k.includes('mongodb:'))                { connectorTypes.add('MongoDB'); connectorsCount++; }
+    if (k.includes('file:read') || k.includes('file:write'))           { connectorTypes.add('File'); connectorsCount++; }
 
     // DataWeave / transforms
     if (k.includes('transform') || k.includes('ee:transform') || k.includes('dw:')) {
