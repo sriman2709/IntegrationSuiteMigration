@@ -948,7 +948,7 @@ select.form-control{cursor:pointer;}
           <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
             <svg width="40" height="40" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" style="margin:0 auto;display:block;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             <p><strong>Click to upload</strong> or drag and drop</p>
-            <p class="supported">Supported: ZIP, XML (max 50MB)</p>
+            <p class="supported">Supported: ZIP, JAR, XML (max 50MB)</p>
           </div>
           <input type="file" id="file-input" accept=".zip,.jar,.xml" onchange="handleFileSelect(event)"/>
           <div id="file-selected" style="display:none;margin-top:12px;padding:10px;background:var(--main-bg);border-radius:6px;font-size:12px;"></div>
@@ -965,10 +965,21 @@ select.form-control{cursor:pointer;}
               <option value="mulesoft">MuleSoft</option>
             </select>
           </div>
-          <button class="btn btn-primary" style="width:100%;" onclick="submitUpload()">
+          <button class="btn btn-primary" style="width:100%;" id="btn-upload-submit" onclick="submitUpload()">
             <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
             Upload & Parse
           </button>
+          <!-- Upload progress -->
+          <div id="upload-progress-wrap" style="display:none;margin-top:14px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-secondary);margin-bottom:6px;">
+              <span id="upload-progress-label">Uploading…</span>
+              <span id="upload-progress-pct">0%</span>
+            </div>
+            <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
+              <div id="upload-progress-bar" style="background:var(--accent);height:100%;width:0%;transition:width .2s;border-radius:4px;"></div>
+            </div>
+            <div id="upload-parse-status" style="display:none;margin-top:10px;padding:10px 12px;background:var(--main-bg);border-radius:6px;font-size:12px;"></div>
+          </div>
         </div>
         <!-- RIGHT: API Connection -->
         <div class="connect-half">
@@ -1514,6 +1525,20 @@ async function openArtifactDetail(artifactId) {
     // Update header
     document.getElementById('detail-name').textContent = data.name;
     document.getElementById('detail-status').innerHTML = statusBadgeHtml(data.status);
+    // Real vs Mock badge
+    const rawMeta = typeof data.raw_metadata === 'string' ? JSON.parse(data.raw_metadata || '{}') : (data.raw_metadata || {});
+    const isMockArtifact = rawMeta.source === 'fallback' || rawMeta.dataSource === 'mock';
+    const dataSourceBadge = isMockArtifact
+      ? `<span class="badge badge-yellow" title="Parser fell back to estimated data — upload a valid file for real analysis">⚠ Mock</span>`
+      : (rawMeta.dataSource === 'file_upload' || rawMeta.dataSource === 'live_api')
+      ? `<span class="badge badge-green" title="Parsed from real source file">✓ Real</span>`
+      : '';
+    const existingBadge = document.getElementById('detail-data-source');
+    if (existingBadge) existingBadge.outerHTML = dataSourceBadge ? `<span id="detail-data-source">${dataSourceBadge}</span>` : '';
+    else if (dataSourceBadge) {
+      const metaEl = document.getElementById('detail-meta');
+      if (metaEl) metaEl.insertAdjacentHTML('afterbegin', `<span id="detail-data-source">${dataSourceBadge}</span><span class="meta-item">|</span>`);
+    }
     document.getElementById('detail-readiness').innerHTML = `<span class="badge ${data.readiness === 'Auto' ? 'badge-green' : data.readiness === 'Manual' ? 'badge-red' : 'badge-yellow'}">${data.readiness || 'Partial'}</span>`;
     document.getElementById('detail-complexity').innerHTML = `<span class="complexity-${(data.complexity_level || 'Simple').toLowerCase()}">${data.complexity_level || '—'}</span>`;
     document.getElementById('detail-score').textContent = data.complexity_score || 0;
@@ -2100,7 +2125,7 @@ function setSelectedFile(file) {
   }
 }
 
-async function submitUpload() {
+function submitUpload() {
   if (!state.selectedFile) { toast('Please select a file first', 'warning'); return; }
   if (!state.currentProjectId) { toast('Please select a project first', 'warning'); return; }
 
@@ -2110,16 +2135,71 @@ async function submitUpload() {
   formData.append('platform', document.getElementById('upload-platform').value);
   formData.append('source_name', document.getElementById('upload-name').value || state.selectedFile.name);
 
-  try {
-    const res = await fetch(`${API}/api/sources/upload`, { method: 'POST', body: formData });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    closeConnectModal();
-    toast(`Uploaded! Found ${data.count} artifacts.`, 'success');
-    await loadSources(state.currentProjectId);
-  } catch (err) {
-    toast('Upload failed: ' + err.message, 'error');
-  }
+  const btn       = document.getElementById('btn-upload-submit');
+  const wrap      = document.getElementById('upload-progress-wrap');
+  const bar       = document.getElementById('upload-progress-bar');
+  const pct       = document.getElementById('upload-progress-pct');
+  const label     = document.getElementById('upload-progress-label');
+  const parseStatus = document.getElementById('upload-parse-status');
+
+  btn.disabled = true;
+  wrap.style.display = 'block';
+  parseStatus.style.display = 'none';
+  bar.style.width = '0%';
+  label.textContent = 'Uploading…';
+  pct.textContent = '0%';
+
+  const xhr = new XMLHttpRequest();
+
+  xhr.upload.addEventListener('progress', e => {
+    if (!e.lengthComputable) return;
+    const p = Math.round((e.loaded / e.total) * 90); // cap at 90% — parsing takes the rest
+    bar.style.width = p + '%';
+    pct.textContent = p + '%';
+    if (p >= 90) label.textContent = 'Parsing artifacts…';
+  });
+
+  xhr.addEventListener('load', async () => {
+    bar.style.width = '100%';
+    pct.textContent = '100%';
+    if (xhr.status >= 200 && xhr.status < 300) {
+      const data = JSON.parse(xhr.responseText);
+      const isMock = data.artifacts && data.artifacts[0]?.raw_metadata &&
+                     (JSON.parse(data.artifacts[0].raw_metadata || '{}').source === 'fallback');
+      const modeTag = isMock
+        ? `<span style="color:#F59E0B;">⚠ Mock data</span> — parser could not read the file`
+        : `<span style="color:#10B981;">✓ Real data</span> — parsed ${data.count} artifact${data.count !== 1 ? 's' : ''} from file`;
+      parseStatus.style.display = 'block';
+      parseStatus.innerHTML = modeTag;
+      label.textContent = isMock ? 'Parse complete (mock fallback)' : 'Parse complete!';
+
+      await loadSources(state.currentProjectId);
+      loadAllData().catch(() => {});
+      setTimeout(() => {
+        closeConnectModal();
+        toast(isMock
+          ? `Fallback data loaded — re-upload with a valid MuleSoft ZIP/JAR for real parsing`
+          : `Parsed ${data.count} real artifact${data.count !== 1 ? 's' : ''} from ${state.selectedFile.name}`,
+          isMock ? 'warning' : 'success');
+      }, 1200);
+    } else {
+      label.textContent = 'Upload failed';
+      bar.style.background = 'var(--danger)';
+      parseStatus.style.display = 'block';
+      parseStatus.innerHTML = `<span style="color:var(--danger);">✕ ${esc(xhr.responseText || 'Server error')}</span>`;
+      btn.disabled = false;
+    }
+  });
+
+  xhr.addEventListener('error', () => {
+    label.textContent = 'Network error';
+    bar.style.background = 'var(--danger)';
+    btn.disabled = false;
+    toast('Upload failed — network error', 'error');
+  });
+
+  xhr.open('POST', `${API}/api/sources/upload`);
+  xhr.send(formData);
 }
 
 async function testAPIConnection() {
