@@ -1,15 +1,55 @@
 const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
+const session = require('express-session');
 require('dotenv').config();
 
 const { initDb, pool }          = require('./database/db');
 const { runSeed }               = require('./database/seed');
 const { errorHandler }          = require('./middleware/error-handler');
 
+const DEMO_PASSWORD   = process.env.DEMO_PASSWORD   || 'S!erraIS@Migr8#2025';
+const SESSION_SECRET  = process.env.SESSION_SECRET  || 'sd-is-migration-secret-9f3x!k2';
+
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 8 * 60 * 60 * 1000   // 8-hour session
+  }
+}));
+
+// ── Auth endpoints (public — no guard) ────────────────────────────────────────
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password !== DEMO_PASSWORD) {
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+  req.session.authenticated = true;
+  res.json({ ok: true });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/auth/status', (req, res) => {
+  res.json({ authenticated: req.session.authenticated === true });
+});
+
+// ── Auth guard — all /api/* routes require a session ─────────────────────────
+function requireAuth(req, res, next) {
+  if (req.session.authenticated) return next();
+  res.status(401).json({ error: 'Unauthorised' });
+}
+
+// ── Static files (login.html is public, everything else guarded via SPA fallback)
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -34,18 +74,18 @@ const routes = {
 };
 
 // v1 canonical
-app.use('/api/v1/projects',  routes.projects);
-app.use('/api/v1/sources',   routes.sources);
-app.use('/api/v1/artifacts', routes.artifacts);
-app.use('/api/v1/analysis',  routes.analysis);
-app.use('/api/v1/seed',      routes.seed);
+app.use('/api/v1/projects',  requireAuth, routes.projects);
+app.use('/api/v1/sources',   requireAuth, routes.sources);
+app.use('/api/v1/artifacts', requireAuth, routes.artifacts);
+app.use('/api/v1/analysis',  requireAuth, routes.analysis);
+app.use('/api/v1/seed',      requireAuth, routes.seed);
 
 // Legacy aliases — keeps existing frontend working without changes
-app.use('/api/projects',  routes.projects);
-app.use('/api/sources',   routes.sources);
-app.use('/api/artifacts', routes.artifacts);
-app.use('/api/analysis',  routes.analysis);
-app.use('/api/seed',      routes.seed);
+app.use('/api/projects',  requireAuth, routes.projects);
+app.use('/api/sources',   requireAuth, routes.sources);
+app.use('/api/artifacts', requireAuth, routes.artifacts);
+app.use('/api/analysis',  requireAuth, routes.analysis);
+app.use('/api/seed',      requireAuth, routes.seed);
 
 // ── SPA fallback (must come after all API routes) ─────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));

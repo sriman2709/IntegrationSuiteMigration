@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Integration Suite Migration Tool</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0F1117;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Subtle grid background */
+    body::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(245,158,11,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(245,158,11,.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+    }
+
+    /* Glow orb */
+    body::after {
+      content: '';
+      position: absolute;
+      top: -120px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(245,158,11,.12) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      z-index: 1;
+      background: #1A1D26;
+      border: 1px solid #2A2D3A;
+      border-radius: 20px;
+      padding: 48px 44px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .logo-mark {
+      width: 42px;
+      height: 42px;
+      background: linear-gradient(135deg, #F59E0B, #D97706);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      line-height: 1.2;
+    }
+
+    .logo-text strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .logo-text span {
+      font-size: 12px;
+      color: rgba(255,255,255,.4);
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -.5px;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: rgba(255,255,255,.4);
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(255,255,255,.5);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 8px;
+    }
+
+    .input-wrap {
+      position: relative;
+      margin-bottom: 24px;
+    }
+
+    input[type="password"] {
+      width: 100%;
+      background: #0F1117;
+      border: 1px solid #2A2D3A;
+      border-radius: 10px;
+      padding: 13px 44px 13px 14px;
+      font-size: 15px;
+      color: #fff;
+      outline: none;
+      transition: border-color .15s;
+      letter-spacing: .08em;
+    }
+
+    input[type="password"]:focus {
+      border-color: #F59E0B;
+      box-shadow: 0 0 0 3px rgba(245,158,11,.15);
+    }
+
+    .toggle-eye {
+      position: absolute;
+      right: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      color: rgba(255,255,255,.3);
+      transition: color .15s;
+    }
+
+    .toggle-eye:hover { color: rgba(255,255,255,.7); }
+
+    .btn-login {
+      width: 100%;
+      background: linear-gradient(135deg, #F59E0B, #D97706);
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #0F1117;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      letter-spacing: .02em;
+    }
+
+    .btn-login:hover   { opacity: .92; }
+    .btn-login:active  { transform: scale(.98); }
+    .btn-login:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .error-msg {
+      display: none;
+      background: rgba(239,68,68,.12);
+      border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #FCA5A5;
+      margin-bottom: 20px;
+    }
+
+    .error-msg.visible { display: block; }
+
+    .footer-note {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid #2A2D3A;
+      font-size: 11px;
+      color: rgba(255,255,255,.2);
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    /* Shake animation on wrong password */
+    @keyframes shake {
+      0%,100%{ transform: translateX(0); }
+      20%    { transform: translateX(-8px); }
+      40%    { transform: translateX(8px); }
+      60%    { transform: translateX(-6px); }
+      80%    { transform: translateX(6px); }
+    }
+    .shake { animation: shake .4s ease; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="logo-row">
+      <div class="logo-mark">⚡</div>
+      <div class="logo-text">
+        <strong>Sierra Digital</strong>
+        <span>Integration Suite Migration Tool</span>
+      </div>
+    </div>
+
+    <h1>Welcome back</h1>
+    <p class="subtitle">Enter your access password to continue to the assessment platform.</p>
+
+    <div class="error-msg" id="error-msg">Incorrect password. Please try again.</div>
+
+    <label for="pwd">Password</label>
+    <div class="input-wrap">
+      <input type="password" id="pwd" placeholder="••••••••••••••" autofocus autocomplete="current-password">
+      <button class="toggle-eye" type="button" onclick="togglePwd()" aria-label="Show/hide password">
+        <svg id="eye-icon" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+    </div>
+
+    <button class="btn-login" id="btn" onclick="doLogin()">Sign In</button>
+
+    <div class="footer-note">
+      Sierra Digital Confidential · Authorised access only<br>
+      This tool contains client data — do not share credentials
+    </div>
+  </div>
+
+  <script>
+    // Allow Enter key to submit
+    document.getElementById('pwd').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+
+    function togglePwd() {
+      const inp = document.getElementById('pwd');
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+    }
+
+    async function doLogin() {
+      const pwd = document.getElementById('pwd').value;
+      const btn = document.getElementById('btn');
+      const err = document.getElementById('error-msg');
+      const card = document.getElementById('card');
+
+      if (!pwd) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      err.classList.remove('visible');
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pwd })
+        });
+
+        if (res.ok) {
+          btn.textContent = '✓ Redirecting…';
+          // Redirect to app (or wherever the user was headed)
+          const next = new URLSearchParams(window.location.search).get('next') || '/';
+          window.location.href = next;
+        } else {
+          err.classList.add('visible');
+          card.classList.remove('shake');
+          void card.offsetWidth; // force reflow
+          card.classList.add('shake');
+          document.getElementById('pwd').value = '';
+          document.getElementById('pwd').focus();
+          btn.disabled = false;
+          btn.textContent = 'Sign In';
+        }
+      } catch (e) {
+        err.textContent = 'Network error — please try again.';
+        err.classList.add('visible');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    }
+  </script>
+</body>
+</html>
