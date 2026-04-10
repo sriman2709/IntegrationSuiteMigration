@@ -12,6 +12,7 @@ const DEMO_PASSWORD   = process.env.DEMO_PASSWORD   || 'S!erraIS@Migr8#2025';
 const SESSION_SECRET  = process.env.SESSION_SECRET  || 'sd-is-migration-secret-9f3x!k2';
 
 const app = express();
+app.set('trust proxy', 1); // Azure App Service terminates SSL at the load balancer
 app.use(cors());
 app.use(express.json());
 app.use(session({
