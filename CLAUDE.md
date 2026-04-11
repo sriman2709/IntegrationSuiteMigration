@@ -61,6 +61,22 @@
 - **Metrics:** Expose Prometheus metrics at `/metrics` using `prom-client`.
 - **Alerts:** Every service must have an Azure Monitor alert for error rate > 1% and p99 latency > 2s.
 
+## 🚀 Project Session Bootstrap (ALWAYS DO THIS FIRST)
+
+At the start of **every session** in this directory, before any code work:
+
+1. **Read** `docs/SESSION_CONTEXT.md` — live URLs, credentials, current sprint, last action, known issues
+2. **Read** `docs/SPRINT_PLAN.md` — find the sprint marked **▶ CURRENT**, read its full definition
+3. **Read** `docs/TESTING_REPORT.md` — live artifact test matrix (what's passed, what's failing)
+4. **Run** `git log --oneline -8` — confirm last committed state
+
+Then either:
+- Continue the CURRENT sprint from SESSION_CONTEXT.md "Last Action"
+- Or ask Sriman: "Ready to continue S{N} — last action was X. Shall I proceed?"
+
+**These three docs are the source of truth.** Local ~/.claude memory files are secondary mirrors.
+Any Claude account on any machine has full context by reading these files from the repo.
+
 @rules/coding-style.md
 @rules/testing.md
 @rules/security.md

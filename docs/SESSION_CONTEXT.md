@@ -1,69 +1,131 @@
 # Session Context — IS Migration Accelerator
+# ============================================
+# READ THIS FILE at the start of EVERY Claude session.
+# It is the live state of the project — always more current than memory.
 
-## How to resume any session
-
-At the start of every Claude session in this project:
-1. Read `docs/SPRINT_PLAN.md` — find the current sprint (look for **NEXT** status)
-2. Read `docs/CONVERSION_ANALYSIS.md` — connector/transform/trigger patterns from sample analysis
-3. Check `git log --oneline -10` to see what was last committed
-4. Say "go S{N}" to start the next sprint
-
-## Current State (last updated by Claude)
-
+## Live URLs & Credentials
 | Item | Value |
 |------|-------|
-| Live URL | https://is-migration-sd.azurewebsites.net |
-| DB | cop-postgres-srv (Azure Central US) |
+| Live app | https://is-migration-sd.azurewebsites.net |
+| Login password | ISMigr8@SLB#Demo2025! (also DEMO_PASSWORD in App Settings) |
 | Repo | github.com/sriman2709/IntegrationSuiteMigration |
-| Branch | main (CI/CD auto-deploys on push) |
-| Login password | ISMigr8@SLB#Demo2025! |
-| Current sprint | **S9 — Boomi Enhancement** |
+| Branch | main (CI/CD: push → Azure auto-deploys, ~3 min) |
+| DB | cop-postgres-srv.postgres.database.azure.com, db=integration_migration, user=copadmin |
+| Node on Azure | v20.20.0 (Linux container) |
+| OpenAI key | set in Azure App Settings as OPENAI_API_KEY |
+| Azure CLI account | s.sundararaman@sierradigitalinc.com |
+| Mac IP whitelisted | 122.167.97.35 (MacBookPro-20260411) for Postgres |
 
-## What's already built (pre-sprint)
-- Full assessment tool: upload ZIP/JAR/XML, parse, artifact cards, complexity scoring
-- Login/auth (express-session), Azure deploy via GitHub Actions
-- MuleSoft deep parser (Mule 3 + 4, ZIP/JAR recursive)
-- TIBCO BW5 parser (ProcessDef)
-- TIBCO BW6 parser (BPWS/BPEL format)
-- engine/iflow.js — iFlow .zip generator (stubs, real data feeds in from S3+)
-- engine/conversion.js — conversion plan generator (stubs)
+## Current Sprint
+**S12 — Real Artifact Testing: Assessment Pass** (▶ ACTIVE as of 2026-04-11)
+See `docs/SPRINT_PLAN.md` for full definition.
 
-## Sprints done
-- **S0** ✅ — knowledge_base table + MCP server (mcp/knowledge-server.js) + 28 seeded knowledge entries
-- **S1** ✅ — raw_xml column + conversion_status/iflow_xml/conversion_notes in artifacts; all parsers store source XML
-- **S2** ✅ (existed) — engine/iflow.js package generator
-- **S3** ✅ — MuleSoft connector extraction from raw_xml; all adapters mapped; services/iflow-generator-mulesoft.js
-- **S4** ✅ — engine/iflow-mulesoft-bpmn.js (real BPMN2 step builder); wired into buildFullBPMN() in iflow.js via pd.processors detection
-- **S5** ✅ — buildMuleSoftGroovyScripts() in iflow.js; DW 1.0 → Groovy stubs with original DataWeave preserved as comment block; one .groovy file per transform step
-- **S6** ✅ — Already wired in S4: buildExceptionSubprocesses() in iflow-mulesoft-bpmn.js; catch/choice-exception-strategy → BPMN2 exception subprocesses with error start/end events
-- **S7** ✅ DONE — engine/iflow-tibco-bw6-bpmn.js created (buildBw6BPMN: xslt→XSLTransformation, invoke→RequestReply, router, splitter, fault handlers→exception subprocesses); wired into iflow.js (buildFullBPMN BW6 branch + .xsl emit into mapping/); routes/artifacts.js resolvePlatformData BW6 branch calling extractBw6PlatformData
-- **S8** ✅ DONE — services/iflow-generator-tibco-bw5.js (BW5 ProcessDef extractor: topo-sort via transitions, XSLT from mapper inputBindings, Java→Groovy stubs, pd:group catch→errorHandlers); engine/iflow-tibco-bw5-bpmn.js (buildBw5BPMN: all step types + exception subprocesses); wired into iflow.js + routes/artifacts.js; fixed BW6 platform detection bug (artifact stores 'tibco', pd.platform stores 'tibco-bw6')
+## Last Action (update this every session end)
+> 2026-04-11: Fixed 6 assessment bugs (challenges, scripting label, MuleSoft connectors=0,
+> flow-ref recursion, DataWeave mapping undefined, TIBCO platform normalisation).
+> Pushed 3 commits. Revised sprint plan written. Ready to start S12 testing.
 
-## Sample files (for testing — on OneDrive)
-- MuleSoft: `OneDrive/projects/anypoint-examples-3.8.zip`
-- TIBCO BW6: `OneDrive/projects/bw-samples-master.zip`
+## What's Built and Working
+- Upload ZIP → parse → artifact cards (MuleSoft, BW5, BW6, Boomi)
+- Assessment engine: per-platform, complexity scoring, challenges, risks, connectors
+- Conversion engine: generates iFlow ZIP (MuleSoft, BW6, BW5 → BPMN2 + XSLT + Groovy)
+- Quality engine: completeness score, flags (UNMAPPED_CONNECTOR, SCRIPTING_PRESERVED, etc.)
+- Chat agent: GPT-4o streaming (lazy OpenAI init — no startup crash)
+- Knowledge base: 28+ seeded entries, MCP server (npm run mcp)
+- Real artifact test project: 24 seeded artifacts with real raw_xml (project id=16)
+- Login/auth, Azure deploy, session management
 
-## Key technical facts (never re-derive these)
-- MuleSoft 3.8 uses DataWeave **1.0** (`%dw 1.0`) — NOT DataWeave 2.0
-- TIBCO BW6 XSLT is HTML-escaped in `expression` attribute — unescape to get valid XSLT 1.0 (SAP IS-native)
-- MongoDB has NO native SAP IS adapter — suggest HTTPS/MongoDB Atlas REST API
-- SAP IS iFlow zip: META-INF/MANIFEST.MF + src/main/resources/scenarioflows/integrationflow/{id}.iflw
-- Azure session needs `app.set('trust proxy', 1)` for SSL termination
+## Real Artifact Test Project
+Project: **"Real Artifact Tests"** (id=16, source_connection id=16)
+Seed: `node database/seed-real-artifacts.js` (idempotent — safe to re-run)
+Test files in: `test-data/` (gitignored locally)
+
+| Platform | Count | Artifact Names |
+|----------|-------|----------------|
+| MuleSoft 3.8 | 15 | Hello_World_HTTP, HTTP_Request_With_Logger, Content_Based_Routing, Scatter_Gather_Flow, Foreach_And_Choice_Routing, Choice_Exception_Strategy, DataWeave_Orders_API, Database_To_JSON, JSON_To_JMS_Queue, CSV_To_MongoDB, SMTP_CSV_Email, SOAP_Webservice_Consumer, Service_Orchestration_Choice, Salesforce_To_MySQL_Batch, JMS_Rollback_Redelivery |
+| TIBCO BW6 | 5 | BW6_Logging_Service, BW6_Credit_App_Main, BW6_Credit_Check_Backend, BW6_Credit_DB_Lookup, BW6_Equifax_Score |
+| TIBCO BW5 | 4 | BW5_Common_SOAP_Handler, BW5_Startup_SOAP_Gateway, BW5_Invalid_Data_Handler, BW5_Get_WSDL |
+
+Testing matrix: see `docs/TESTING_REPORT.md`
+
+## Known Issues / Watch List
+- BW5 extractor: `pd.platform` must return `'tibco-bw5'` — verify it does (check extractBw5PlatformData return)
+- MuleSoft `request` (stripped from `http:request`): added `k === 'request'` check — verify it doesn't
+  catch non-HTTP request elements
+- `scatter-gather` internal branches not walked for connectors (expression-components, not real connectors — OK)
+- Boomi: deferred (no real sample files, trial API limitations)
+- SAP PI/PO: not started
+
+## Key Files (never guess these paths)
+```
+server.js                             Express entry, port 4001
+engine/assessment.js                  Assessment engine (platform-aware)
+engine/iflow.js                       iFlow ZIP generator (all platforms)
+engine/conversion.js                  Conversion plan generator
+engine/quality.js                     Quality scoring
+engine/iflow-mulesoft-bpmn.js         MuleSoft BPMN2 builder
+engine/iflow-tibco-bw6-bpmn.js        BW6 BPMN2 builder
+engine/iflow-tibco-bw5-bpmn.js        BW5 BPMN2 builder
+services/iflow-generator-mulesoft.js  MuleSoft raw_xml extractor ← most complex
+services/iflow-generator-tibco-bw6.js BW6 raw_xml extractor
+services/iflow-generator-tibco-bw5.js BW5 raw_xml extractor
+services/chat-agent.js                GPT-4o chat (lazy init)
+routes/artifacts.js                   /api/artifacts (assess, convert, quality)
+routes/chat.js                        /api/chat SSE
+database/seed-real-artifacts.js       Seeds 24 real artifacts
+public/index.html                     All frontend (SPA, ~2000 lines)
+mcp/knowledge-server.js               MCP server (npm run mcp)
+docs/SPRINT_PLAN.md                   ← YOU ARE READING SIBLING FILE
+docs/TESTING_REPORT.md               ← Live test matrix
+```
+
+## Critical Technical Facts (never re-derive)
+```
+MuleSoft 3.8:
+  - DataWeave 1.0: %dw 1.0, %output — NOT DataWeave 2.0
+  - xml2js stripPrefix removes namespace prefix from element keys:
+    smtp:outbound-endpoint → 'outbound-endpoint'
+    http:request           → 'request'
+    dw:transform-message   → 'transform-message'
+  - doc.mule is OBJECT (not array): doc.mule[0] = undefined
+  - doc.mule structure: { '$': {...xmlns...}, 'gmail-connector': [...], 'flow': [...] }
+  - Resolve outbound connector type: globalConnectorMap[connector-ref] not k.includes('smtp:')
+
+TIBCO BW6:
+  - activityTypeID in BWActivity['$'].activityTypeID (attribute — not stripped)
+  - XSLT is HTML-escaped in tibex:inputBinding 'expression' attribute — unescape to get valid XSLT 1.0
+  - extractionActivity not extensionActivity — key after stripPrefix: 'extensionactivity'
+
+TIBCO BW5:
+  - .process = pd:ProcessDefinition root
+  - pd:starter = trigger, pd:activity = step, pd:transition = link, pd:group = scope/error handler
+  - Shared resources in .alias files (JDBC/JMS/HTTP)
+
+Assessment:
+  - platform normalised in runAssessment: tibco-bw* → 'tibco', mule* → 'mulesoft'
+  - use artifact.platform (raw) for display, normalised platform for branch logic
+  - pd.scripts (enriched, has name+complexity) preferred over pd.dataWeaveTransforms (raw)
+
+MongoDB: NO native SAP IS adapter → HTTPS + MongoDB Atlas REST API
+SAP IS iFlow ZIP: META-INF/MANIFEST.MF + *.iflw (BPMN2) + parameters.prop + *.groovy + *.xsl
+Complexity: shapes*4 + connectors*8 + maps*6 + scripts*10 + errorHandlers*5 (capped 100)
+```
 
 ## MCP Knowledge Server
-Start: `npm run mcp` (from project root)  
-Re-seed: `npm run seed:knowledge`  
-Table: `knowledge_base` in cop-postgres-srv  
-Tools: search_knowledge, save_knowledge, list_categories, get_sprint_context
+```bash
+npm run mcp        # start MCP server (port 3001)
+npm run seed:knowledge  # re-seed 28 entries
+```
+MCP tools: search_knowledge, save_knowledge, list_categories, get_sprint_context
 
-## Claude Desktop MCP config (add to ~/.claude.json or claude_desktop_config.json)
+## Claude Desktop MCP config (any machine)
 ```json
 {
   "mcpServers": {
     "is-migration-knowledge": {
       "command": "node",
-      "args": ["/Users/parisuchitha/projects/IntegrationSuiteMigration/mcp/knowledge-server.js"],
-      "env": { "DATABASE_URL": "<Azure Postgres connection string from .env>" }
+      "args": ["/path/to/IntegrationSuiteMigration/mcp/knowledge-server.js"],
+      "env": { "DATABASE_URL": "postgres://copadmin:<pwd>@cop-postgres-srv.postgres.database.azure.com/integration_migration?sslmode=require" }
     }
   }
 }
