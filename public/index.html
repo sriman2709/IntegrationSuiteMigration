@@ -3471,9 +3471,14 @@ function initChatAgent() {
 
     fetch('/api/chat', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question: text, projectId })
     }).then(res => {
+      if (res.status === 401) {
+        window.location.href = '/login.html?next=' + encodeURIComponent(window.location.pathname);
+        return Promise.reject(new Error('Session expired — redirecting to login'));
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
