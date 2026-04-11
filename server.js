@@ -71,7 +71,8 @@ const routes = {
   sources:   require('./routes/sources'),
   artifacts: require('./routes/artifacts'),
   analysis:  require('./routes/analysis'),
-  seed:      require('./routes/seed')
+  seed:      require('./routes/seed'),
+  chat:      require('./routes/chat')
 };
 
 // v1 canonical
@@ -80,6 +81,7 @@ app.use('/api/v1/sources',   requireAuth, routes.sources);
 app.use('/api/v1/artifacts', requireAuth, routes.artifacts);
 app.use('/api/v1/analysis',  requireAuth, routes.analysis);
 app.use('/api/v1/seed',      requireAuth, routes.seed);
+app.use('/api/v1/chat',      requireAuth, routes.chat);
 
 // Legacy aliases — keeps existing frontend working without changes
 app.use('/api/projects',  requireAuth, routes.projects);
@@ -87,6 +89,7 @@ app.use('/api/sources',   requireAuth, routes.sources);
 app.use('/api/artifacts', requireAuth, routes.artifacts);
 app.use('/api/analysis',  requireAuth, routes.analysis);
 app.use('/api/seed',      requireAuth, routes.seed);
+app.use('/api/chat',      requireAuth, routes.chat);
 
 // ── SPA fallback (must come after all API routes) ─────────────────────────────
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
