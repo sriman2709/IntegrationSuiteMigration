@@ -5,7 +5,15 @@
  */
 
 function runAssessment(artifact, platformData) {
-  const platform = artifact.platform || 'boomi';
+  // Normalise platform: 'tibco-bw5', 'tibco-bw6', 'tibco_bw5' → 'tibco'
+  //                     'mule', 'mulesoft-3', 'anypoint' → 'mulesoft'
+  const rawPlatform = (artifact.platform || 'boomi').toLowerCase();
+  const platform =
+    rawPlatform.startsWith('tibco')                          ? 'tibco'    :
+    rawPlatform === 'mule' || rawPlatform.startsWith('mule') ? 'mulesoft' :
+    rawPlatform === 'pipo' || rawPlatform.includes('pi/po')  ? 'pipo'     :
+    rawPlatform === 'boomi' || rawPlatform.includes('boomi') ? 'boomi'    :
+    rawPlatform;
   const iflowName = generateIFlowName(artifact);
   const iflowPackage = `${artifact.domain || 'INT'}_Migration_Package_v1`;
 
@@ -38,7 +46,7 @@ function buildFindings(artifact, pd, platform) {
   findings.push({
     section: 'Process Metadata',
     items: [
-      `Platform: ${platform.toUpperCase()} | Process ID: ${artifact.process_id || 'N/A'}`,
+      `Platform: ${(artifact.platform || platform).toUpperCase()} | Process ID: ${artifact.process_id || 'N/A'}`,
       `Artifact Type: ${artifact.artifact_type || 'Process'} | Trigger: ${artifact.trigger_type || 'API'}`,
       `Domain: ${artifact.domain || 'INT'} | Folder: ${pd.folder || pd.projectPath || '/Production'}`,
       `Complexity: ${artifact.complexity_score}/100 (${artifact.complexity_level}) | Size: ${artifact.tshirt_size} | Effort: ${artifact.effort_days}d`,
@@ -87,8 +95,17 @@ function buildFindings(artifact, pd, platform) {
     if (maps.length === 0) mapItems.push(`${artifact.maps_count || 0} data transformation(s) identified`);
     if (artifact.has_scripting) mapItems.push('Groovy transformation scripts must be reimplemented as XSLT or Groovy steps in IS');
   } else if (platform === 'mulesoft') {
-    const transforms = pd.dataWeaveTransforms || [];
-    transforms.forEach(t => mapItems.push(`• ${t.name}: ${t.complexity} complexity, ${t.fieldMappings || '?'} field mappings (${t.inputFormat} → ${t.outputFormat})`));
+    // pd.scripts has enriched objects {type,name,complexity,outputType}; pd.dataWeaveTransforms has raw {body,outputType}
+    const transforms = (pd.scripts || []).filter(s => s.type === 'dataweave').length > 0
+      ? (pd.scripts || []).filter(s => s.type === 'dataweave')
+      : (pd.dataWeaveTransforms || []);
+    transforms.forEach((t, i) => {
+      const tName       = t.name       || `Transform_${i + 1}`;
+      const tComplexity = t.complexity || 'simple';
+      const tOut        = t.outputFormat || t.outputType || 'any';
+      const tIn         = t.inputFormat  || 'payload';
+      mapItems.push(`• ${tName}: ${tComplexity} complexity, ${t.fieldMappings || '?'} field mappings (${tIn} → ${tOut})`);
+    });
     if (transforms.length === 0) mapItems.push(`${artifact.maps_count || 0} DataWeave transformation(s) identified`);
     if (artifact.has_scripting) mapItems.push('DataWeave expressions → SAP Message Mapping / XSLT conversion required');
   } else if (platform === 'pipo') {
@@ -97,10 +114,19 @@ function buildFindings(artifact, pd, platform) {
     mapItems.push('SAP XI Message Mappings can be imported directly into Integration Suite using Migration Tool');
     if (pd.mapping?.type === 'XSLT') mapItems.push('XSLT mappings are directly reusable in IS with minor adapter configuration changes');
   } else if (platform === 'tibco') {
+    // Real BW6 extractor returns xsltTransforms; mock/BW5 connector returns mappers
     const mappers = pd.mappers || [];
-    mappers.forEach(m => mapItems.push(`• ${m.name}: ${m.type}, ${m.fields} fields${m.hasCustomXPath ? ' (custom XPath — review required)' : ''}`));
-    if (mappers.length === 0) mapItems.push(`${artifact.maps_count || 0} TIBCO BW mapper(s) identified`);
-    if (artifact.has_scripting) mapItems.push('Java activities in BW must be reimplemented as Groovy Script steps in IS');
+    const xsltTransforms = pd.xsltTransforms || [];
+    if (mappers.length > 0) {
+      mappers.forEach(m => mapItems.push(`• ${m.name || 'Mapper'}: ${m.type || 'BW Mapper'}, ${m.fields || '?'} fields${m.hasCustomXPath ? ' (custom XPath — review required)' : ''}`));
+    } else if (xsltTransforms.length > 0) {
+      xsltTransforms.forEach((x, i) => mapItems.push(`• ${x.name || `Transform_${i + 1}`}: XSLT mapping${x.inputSchema ? ` (${x.inputSchema} → ${x.outputSchema || 'output'})` : ''}`));
+    } else {
+      mapItems.push(`${artifact.maps_count || 0} TIBCO BW mapper(s) identified`);
+    }
+    const bwRaw = (artifact.platform || '').toLowerCase();
+    const bwSubtype = bwRaw.includes('bw6') ? 'BW6' : bwRaw.includes('bw5') ? 'BW5' : 'BW';
+    if (artifact.has_scripting) mapItems.push(`Java activities in ${bwSubtype} must be reimplemented as Groovy Script steps in IS`);
   }
   if (artifact.maps_count > 4) {
     mapItems.push(`⚠ ${artifact.maps_count} mappings indicate significant data transformation effort — allocate dedicated testing time`);
