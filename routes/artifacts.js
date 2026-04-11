@@ -14,6 +14,19 @@ const { runQA } = require('../engine/qa');
 const { runDeploy } = require('../engine/deploy');
 const { runValidate } = require('../engine/validate');
 const { generateIFlowPackage } = require('../engine/iflow');
+const { extractMuleSoftPlatformData, buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
+
+// ── Resolve real platform data: prefer raw_xml extraction over mock connector ─
+async function resolvePlatformData(art) {
+  if (art.raw_xml && art.platform === 'mulesoft') {
+    const real = await extractMuleSoftPlatformData(art);
+    // Tag source so UI can show "Real" badge
+    real._source = real._source || 'raw_xml';
+    return real;
+  }
+  const connector = getConnector(art.platform || art.project_platform);
+  return connector.getArtifactData(art);
+}
 
 // ── List artifacts for a project ──────────────────────────────────────────────
 router.get('/project/:projectId', async (req, res) => {
@@ -117,9 +130,8 @@ router.post('/:id/assess', async (req, res) => {
     if (!artResult.rows.length) return res.status(404).json({ error: 'Not found' });
     const art = artResult.rows[0];
 
-    // Get platform connector + enriched data
-    const connector = getConnector(art.platform || art.project_platform);
-    const platformData = await connector.getArtifactData(art);
+    // Get platform data — real raw_xml extraction for MuleSoft, connector for others
+    const platformData = await resolvePlatformData(art);
 
     // Run rich assessment engine
     const assessment = runAssessment(art, platformData);
@@ -173,9 +185,12 @@ router.post('/:id/convert', async (req, res) => {
     if (!artResult.rows.length) return res.status(404).json({ error: 'Not found' });
     const art = artResult.rows[0];
 
-    const connector = getConnector(art.platform || art.project_platform);
-    const platformData = await connector.getArtifactData(art);
-    const convOutput = runConversion(art, platformData);
+    // Use real raw_xml extractor for MuleSoft; mock connector for others
+    const platformData = await resolvePlatformData(art);
+    const convOutput   = runConversion(art, platformData);
+
+    // Generate the actual iFlow package to capture iflow_xml
+    const pkg = generateIFlowPackage(art, platformData, convOutput);
 
     // Get next run number
     const runCount = await pool.query('SELECT COUNT(*) FROM conversion_runs WHERE artifact_id = $1', [id]);
@@ -187,12 +202,36 @@ router.post('/:id/convert', async (req, res) => {
       [id, runNumber, JSON.stringify(convOutput)]
     );
 
-    // Update status synchronously — no setTimeout, so loadAllData() sees correct count immediately
+    // Build conversion notes from platformData
+    const notes      = platformData.conversionNotes || [];
+    const completeness = platformData.completenessScore ?? convOutput.auto_converted_percentage ?? 80;
+    const dataSource = platformData._source || 'connector';
+
     await pool.query("UPDATE conversion_runs SET status = 'converted', updated_at = NOW() WHERE id = $1", [runResult.rows[0].id]);
-    await pool.query("UPDATE artifacts SET status = 'converted', updated_at = NOW() WHERE id = $1", [id]);
+    await pool.query(
+      `UPDATE artifacts SET
+        status = 'converted',
+        conversion_status = 'converted',
+        converted_at = NOW(),
+        iflow_xml = $1,
+        conversion_notes = $2,
+        conversion_completeness = $3,
+        updated_at = NOW()
+       WHERE id = $4`,
+      [pkg.buffer ? convOutput.iflow_xml : null, JSON.stringify(notes), completeness, id]
+    );
     await pool.query("UPDATE projects SET updated_at = NOW() WHERE id = (SELECT project_id FROM artifacts WHERE id = $1)", [id]);
 
-    res.json({ ...runResult.rows[0], status: 'converted', convert_output: convOutput });
+    res.json({
+      ...runResult.rows[0],
+      status: 'converted',
+      convert_output: convOutput,
+      conversion_completeness: completeness,
+      conversion_notes: notes,
+      data_source: dataSource,
+      iflow_id: pkg.iflowId,
+      iflow_name: pkg.iflowName
+    });
   } catch (err) {
     console.error('Conversion error:', err);
     res.status(500).json({ error: err.message });
@@ -293,9 +332,8 @@ router.get('/:id/download', async (req, res) => {
     );
     const convOutput = runResult.rows.length ? runResult.rows[0].convert_output : null;
 
-    // Get platform connector + enriched data
-    const connector = getConnector(art.platform || art.project_platform);
-    const platformData = await connector.getArtifactData(art);
+    // Use real raw_xml extraction for MuleSoft; connector for others
+    const platformData = await resolvePlatformData(art);
 
     // Generate iFlow package ZIP
     const pkg = generateIFlowPackage(art, platformData, convOutput);
@@ -310,6 +348,40 @@ router.get('/:id/download', async (req, res) => {
 
   } catch (err) {
     console.error('iFlow download error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET raw source XML (for UI "View Source" button) ─────────────────────────
+router.get('/:id/raw-xml', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT name, platform, raw_xml FROM artifacts WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const { name, platform, raw_xml } = rows[0];
+    if (!raw_xml) return res.json({ hasSource: false, message: 'No source XML stored — re-upload the file to capture raw source' });
+    res.json({ hasSource: true, name, platform, xml: raw_xml, length: raw_xml.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── GET conversion notes for artifact ────────────────────────────────────────
+router.get('/:id/conversion-report', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.name, a.platform, a.conversion_status, a.converted_at,
+              a.conversion_completeness, a.conversion_notes, a.iflow_xml,
+              cr.convert_output
+       FROM artifacts a
+       LEFT JOIN conversion_runs cr ON cr.artifact_id = a.id
+       WHERE a.id = $1
+       ORDER BY cr.run_number DESC
+       LIMIT 1`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

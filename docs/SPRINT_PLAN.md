@@ -29,8 +29,8 @@ A production-grade migration accelerator that ingests real MuleSoft (3.x/4.x), T
 | S0 | Knowledge Base + MCP | **✅ DONE** | knowledge_base table, MCP server, 28 seeded entries (connector maps, patterns, rules) |
 | S1 | Data Foundation | **✅ DONE** | raw_xml + conversion columns in artifacts; MuleSoft/TIBCO/Boomi parsers store source XML |
 | S2 | iFlow Package Engine | **✅ EXISTS** | engine/iflow.js already built — stubs; S3+ feeds real data into it |
-| S3 | MuleSoft Connectors | **NEXT** | All MuleSoft adapters mapped to SAP IS from raw_xml |
-| S4 | MuleSoft Flow Structure | **PENDING** | choice/foreach/scatter-gather → iFlow steps |
+| S3 | MuleSoft Connectors | **✅ DONE** | All MuleSoft adapters mapped to SAP IS from raw_xml |
+| S4 | MuleSoft Flow Structure | **NEXT** | choice/foreach/scatter-gather → iFlow steps |
 | S5 | MuleSoft Transformation | **PENDING** | DataWeave 1.0 → Groovy stub + preserved script |
 | S6 | MuleSoft Error Handling | **PENDING** | Exception strategies → iFlow exception sub-process |
 | S7 | TIBCO BW6 Conversion | **PENDING** | Full BW6 → iFlow with extracted XSLT |
@@ -530,4 +530,4 @@ Completeness:         89%
 
 At the start of any session, read this file plus `project_iflow_conversion_analysis.md`. Then check the Sprint Tracker table above for status. Pick the next PENDING sprint and start. No need to re-analyse the sample files — everything is captured here.
 
-**Current sprint to start next**: S3 — MuleSoft Connector Mapping (reads raw_xml, generates real adapter configs in iFlow BPMN2)
+**Current sprint to start next**: S4 — MuleSoft Flow Structure (choice/foreach/scatter-gather → iFlow steps)
