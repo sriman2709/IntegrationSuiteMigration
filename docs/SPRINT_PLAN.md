@@ -32,8 +32,8 @@ A production-grade migration accelerator that ingests real MuleSoft (3.x/4.x), T
 | S3 | MuleSoft Connectors | **✅ DONE** | All MuleSoft adapters mapped to SAP IS from raw_xml |
 | S4 | MuleSoft Flow Structure | **✅ DONE** | choice/foreach/scatter-gather → real BPMN2 steps; engine/iflow-mulesoft-bpmn.js wired into iflow.js |
 | S5 | MuleSoft Transformation | **✅ DONE** | DataWeave 1.0 → Groovy stub with DW preserved as comments; buildMuleSoftGroovyScripts() wired in iflow.js |
-| S6 | MuleSoft Error Handling | **NEXT** | Exception strategies → iFlow exception sub-process |
-| S7 | TIBCO BW6 Conversion | **PENDING** | Full BW6 → iFlow with extracted XSLT |
+| S6 | MuleSoft Error Handling | **✅ DONE** | catch/choice-exception-strategy → BPMN2 exception subprocesses; already wired via buildExceptionSubprocesses() in iflow-mulesoft-bpmn.js |
+| S7 | TIBCO BW6 Conversion | **NEXT** | Full BW6 → iFlow with extracted XSLT |
 | S8 | TIBCO BW5 Conversion | **PENDING** | ProcessDef → iFlow |
 | S9 | Boomi Enhancement | **PENDING** | Boomi raw_xml + real iFlow generation |
 | S10 | Conversion Quality Engine | **PENDING** | Completeness %, unmapped flags, conversion report |
@@ -42,7 +42,7 @@ A production-grade migration accelerator that ingests real MuleSoft (3.x/4.x), T
 | S13 | SAP PI/PO Migration | **PENDING** | PI/PO export → IS modernisation |
 | S14 | End-to-End Validation | **PENDING** | Azure deploy + SAP IS sandbox import test |
 
-**Current sprint to start next**: S6 — MuleSoft Error Handling
+**Current sprint to start next**: S7 — TIBCO BW6 Conversion
 
 ---
 
