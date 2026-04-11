@@ -33,8 +33,8 @@ A production-grade migration accelerator that ingests real MuleSoft (3.x/4.x), T
 | S4 | MuleSoft Flow Structure | **✅ DONE** | choice/foreach/scatter-gather → real BPMN2 steps; engine/iflow-mulesoft-bpmn.js wired into iflow.js |
 | S5 | MuleSoft Transformation | **✅ DONE** | DataWeave 1.0 → Groovy stub with DW preserved as comments; buildMuleSoftGroovyScripts() wired in iflow.js |
 | S6 | MuleSoft Error Handling | **✅ DONE** | catch/choice-exception-strategy → BPMN2 exception subprocesses; already wired via buildExceptionSubprocesses() in iflow-mulesoft-bpmn.js |
-| S7 | TIBCO BW6 Conversion | **NEXT** | Full BW6 → iFlow with extracted XSLT |
-| S8 | TIBCO BW5 Conversion | **PENDING** | ProcessDef → iFlow |
+| S7 | TIBCO BW6 Conversion | **✅ DONE** | Full BW6 → iFlow with extracted XSLT; engine/iflow-tibco-bw6-bpmn.js + iflow.js + route wiring |
+| S8 | TIBCO BW5 Conversion | **NEXT** | ProcessDef → iFlow |
 | S9 | Boomi Enhancement | **PENDING** | Boomi raw_xml + real iFlow generation |
 | S10 | Conversion Quality Engine | **PENDING** | Completeness %, unmapped flags, conversion report |
 | S11 | UI — Conversion Pipeline | **PENDING** | Real download, per-artifact status, report view |
@@ -530,4 +530,4 @@ Completeness:         89%
 
 At the start of any session, read this file plus `project_iflow_conversion_analysis.md`. Then check the Sprint Tracker table above for status. Pick the next PENDING sprint and start. No need to re-analyse the sample files — everything is captured here.
 
-**Current sprint to start next**: S4 — MuleSoft Flow Structure (choice/foreach/scatter-gather → iFlow steps)
+**Current sprint to start next**: S8 — TIBCO BW5 Conversion
