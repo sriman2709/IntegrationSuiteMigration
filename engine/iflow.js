@@ -15,6 +15,7 @@
 
 const AdmZip = require('adm-zip');
 const { buildMuleSoftBPMN } = require('./iflow-mulesoft-bpmn');
+const { buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 
@@ -42,8 +43,16 @@ function generateIFlowPackage(artifact, platformData, conversionOutput) {
     });
   }
 
-  // 5. Groovy scripts — stubs if artifact has scripting
-  if (artifact.has_scripting) {
+  // 5. Groovy scripts
+  //    For MuleSoft with real processors: emit one Groovy per DataWeave step (DW preserved as comment)
+  //    Otherwise: generic stubs
+  const platform = (artifact.platform || '').toLowerCase();
+  if (platform === 'mulesoft' && platformData.processors && platformData.processors.length > 0) {
+    const dwScripts = buildMuleSoftGroovyScripts(artifact, platformData);
+    dwScripts.forEach(s => {
+      zip.addFile(`src/main/resources/script/${s.filename}`, Buffer.from(s.content));
+    });
+  } else if (artifact.has_scripting) {
     const scripts = buildGroovyScripts(artifact, platformData);
     scripts.forEach(s => {
       zip.addFile(`src/main/resources/script/${s.filename}`, Buffer.from(s.content));
@@ -252,6 +261,47 @@ function buildFieldMappingComments(artifact, pd, idx) {
 
 // ── Groovy Scripts ────────────────────────────────────────────────────────────
 
+// ── MuleSoft: emit one Groovy file per DataWeave transform step ──────────────
+function buildMuleSoftGroovyScripts(artifact, pd) {
+  const scripts = [];
+  const processors = pd.processors || [];
+  let dwIndex = 0;
+
+  processors.forEach(proc => {
+    // Direct DataWeave steps
+    if (proc.type === 'dataweave' && proc.dwScript) {
+      scripts.push(buildGroovyFromDataWeave(artifact, proc.dwScript, dwIndex++));
+    }
+    // Groovy/script steps that carry a dwScript payload (e.g. melToGroovy translations)
+    if (proc.type === 'script' && proc.dwScript) {
+      scripts.push(buildGroovyFromDataWeave(artifact, proc.dwScript, dwIndex++));
+    }
+  });
+
+  // Also include any scripts extracted at top level (e.g. legacy pd.scripts array)
+  const legacyScripts = pd.scripts || [];
+  legacyScripts.forEach((s, i) => {
+    if (typeof s === 'object' && s.dwScript) {
+      scripts.push(buildGroovyFromDataWeave(artifact, s.dwScript, dwIndex + i));
+    } else if (typeof s === 'object' && s.type === 'dataweave') {
+      // Normalise: treat the whole object as dwScript if it has .body
+      if (s.body) scripts.push(buildGroovyFromDataWeave(artifact, s, dwIndex + i));
+    }
+  });
+
+  // If no DW scripts were found but artifact had DataWeave, emit one generic stub
+  if (scripts.length === 0 && (pd.hasDataWeave || processors.some(p => p.type === 'dataweave'))) {
+    const safeId = artifact.name.replace(/[^a-zA-Z0-9]/g, '_');
+    const name = `${safeId}_Transform_1`;
+    scripts.push({
+      filename: `${name}.groovy`,
+      content: buildGroovyContent(artifact, name, name, 'mulesoft', { type: 'dataweave' }, 0)
+    });
+  }
+
+  return scripts;
+}
+
 function buildGroovyScripts(artifact, pd) {
   const scripts = [];
   const srcScripts = pd.scripts || [];
@@ -288,7 +338,7 @@ function buildGroovyContent(artifact, scriptName, safeId, platform, scriptMeta, 
  * Migration Status: STUB — Business logic requires manual translation
  *
  * Purpose: ${purpose}
-${isDataWeave ? ` * NOTE: This was originally a DataWeave 2.0 expression in MuleSoft.\n *       DataWeave logic must be manually re-implemented in Groovy or\n *       converted to SAP IS Message Mapping functions.` : ` * NOTE: This was originally a ${getPlatformScriptType(platform)} script.\n *       Review source logic and re-implement in Groovy for SAP IS.`}
+${isDataWeave ? ` * NOTE: This was originally a DataWeave 1.0 expression in MuleSoft 3.8.\n *       DataWeave logic must be manually re-implemented in Groovy or\n *       converted to SAP IS Message Mapping functions.` : ` * NOTE: This was originally a ${getPlatformScriptType(platform)} script.\n *       Review source logic and re-implement in Groovy for SAP IS.`}
  *
  * Groovy Script API References:
  *   com.sap.gateway.ip.core.customdev.util.Message

@@ -17,7 +17,7 @@ At the start of every Claude session in this project:
 | Repo | github.com/sriman2709/IntegrationSuiteMigration |
 | Branch | main (CI/CD auto-deploys on push) |
 | Login password | ISMigr8@SLB#Demo2025! |
-| Current sprint | **S5 — MuleSoft Transformation** |
+| Current sprint | **S6 — MuleSoft Error Handling** |
 
 ## What's already built (pre-sprint)
 - Full assessment tool: upload ZIP/JAR/XML, parse, artifact cards, complexity scoring
@@ -34,6 +34,7 @@ At the start of every Claude session in this project:
 - **S2** ✅ (existed) — engine/iflow.js package generator
 - **S3** ✅ — MuleSoft connector extraction from raw_xml; all adapters mapped; services/iflow-generator-mulesoft.js
 - **S4** ✅ — engine/iflow-mulesoft-bpmn.js (real BPMN2 step builder); wired into buildFullBPMN() in iflow.js via pd.processors detection
+- **S5** ✅ — buildMuleSoftGroovyScripts() in iflow.js; DW 1.0 → Groovy stubs with original DataWeave preserved as comment block; one .groovy file per transform step
 
 ## Sample files (for testing — on OneDrive)
 - MuleSoft: `OneDrive/projects/anypoint-examples-3.8.zip`

@@ -170,7 +170,7 @@ function buildScriptStep(id, scriptName, label, scriptMeta) {
       <bpmn2:extensionElements>
         <ifl:property><key>script</key><value>ref:${safeName}.groovy</value></ifl:property>
         <ifl:property><key>scriptLanguage</key><value>groovy</value></ifl:property>
-        <!-- Migrated from DataWeave ${scriptMeta && scriptMeta.isDw1 ? '1.0' : '2.0'} — complexity: ${complexity} -->
+        <!-- Migrated from DataWeave 1.0 (MuleSoft 3.8) — complexity: ${complexity} -->
         <!-- Original script preserved in .groovy file as comment block -->
       </bpmn2:extensionElements>
       <bpmn2:incoming>SEQ_TO_${id}</bpmn2:incoming>
