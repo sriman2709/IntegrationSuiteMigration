@@ -147,6 +147,34 @@ router.post('/:id/assess', async (req, res) => {
     // Get platform data — real raw_xml extraction for MuleSoft, connector for others
     const platformData = await resolvePlatformData(art);
 
+    // Backfill DB metadata counts from extracted platform data so assessment
+    // findings show real numbers instead of 0 for freshly-seeded artifacts
+    const processors  = platformData.processors  || platformData.activities || platformData.shapes || [];
+    const xslts       = platformData.xsltTransforms || [];
+    const scripts     = platformData.javaScripts || platformData.scripts || [];
+    const connTypes   = platformData.connectorTypes || [];
+    const recvCfgs    = platformData.receiverConfigs || [];
+    const derivedShapes      = processors.length || art.shapes_count || 0;
+    const derivedConnectors  = (connTypes.length || recvCfgs.length) || art.connectors_count || 0;
+    const derivedMaps        = xslts.length || art.maps_count || 0;
+    const derivedScripting   = scripts.length > 0 || art.has_scripting || false;
+
+    if (derivedShapes !== art.shapes_count || derivedConnectors !== art.connectors_count ||
+        derivedMaps !== art.maps_count || derivedScripting !== art.has_scripting) {
+      await pool.query(
+        `UPDATE artifacts SET shapes_count=$1, connectors_count=$2, maps_count=$3,
+          has_scripting=$4, primary_connector=$5, updated_at=NOW() WHERE id=$6`,
+        [derivedShapes, derivedConnectors, derivedMaps, derivedScripting,
+         connTypes[0] || art.primary_connector || 'HTTP', id]
+      );
+      // Reflect in local art object so assessment uses the real numbers
+      art.shapes_count     = derivedShapes;
+      art.connectors_count = derivedConnectors;
+      art.maps_count       = derivedMaps;
+      art.has_scripting    = derivedScripting;
+      art.primary_connector = connTypes[0] || art.primary_connector || 'HTTP';
+    }
+
     // Run rich assessment engine
     const assessment = runAssessment(art, platformData);
 
