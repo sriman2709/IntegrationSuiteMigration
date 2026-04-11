@@ -17,7 +17,7 @@ At the start of every Claude session in this project:
 | Repo | github.com/sriman2709/IntegrationSuiteMigration |
 | Branch | main (CI/CD auto-deploys on push) |
 | Login password | ISMigr8@SLB#Demo2025! |
-| Current sprint | **S8 — TIBCO BW5 Conversion** |
+| Current sprint | **S9 — Boomi Enhancement** |
 
 ## What's already built (pre-sprint)
 - Full assessment tool: upload ZIP/JAR/XML, parse, artifact cards, complexity scoring
@@ -37,6 +37,7 @@ At the start of every Claude session in this project:
 - **S5** ✅ — buildMuleSoftGroovyScripts() in iflow.js; DW 1.0 → Groovy stubs with original DataWeave preserved as comment block; one .groovy file per transform step
 - **S6** ✅ — Already wired in S4: buildExceptionSubprocesses() in iflow-mulesoft-bpmn.js; catch/choice-exception-strategy → BPMN2 exception subprocesses with error start/end events
 - **S7** ✅ DONE — engine/iflow-tibco-bw6-bpmn.js created (buildBw6BPMN: xslt→XSLTransformation, invoke→RequestReply, router, splitter, fault handlers→exception subprocesses); wired into iflow.js (buildFullBPMN BW6 branch + .xsl emit into mapping/); routes/artifacts.js resolvePlatformData BW6 branch calling extractBw6PlatformData
+- **S8** ✅ DONE — services/iflow-generator-tibco-bw5.js (BW5 ProcessDef extractor: topo-sort via transitions, XSLT from mapper inputBindings, Java→Groovy stubs, pd:group catch→errorHandlers); engine/iflow-tibco-bw5-bpmn.js (buildBw5BPMN: all step types + exception subprocesses); wired into iflow.js + routes/artifacts.js; fixed BW6 platform detection bug (artifact stores 'tibco', pd.platform stores 'tibco-bw6')
 
 ## Sample files (for testing — on OneDrive)
 - MuleSoft: `OneDrive/projects/anypoint-examples-3.8.zip`
