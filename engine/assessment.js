@@ -60,7 +60,7 @@ function buildFindings(artifact, pd, platform) {
   }
   if (artifact.has_scripting) {
     const scripts = pd.scripts || [];
-    structItems.push(`Custom scripting: ${scripts.map(s => `${s.language} — ${s.name}`).join(', ') || artifact.scripting_detail || 'Scripts detected'}`);
+    structItems.push(`Custom scripting: ${scripts.map(s => `${s.language || s.type || 'script'} — ${s.name || s.id || 'unnamed'}`).join(', ') || artifact.scripting_detail || 'Scripts detected'}`);
   }
   findings.push({ section: 'Structural Analysis', items: structItems });
 

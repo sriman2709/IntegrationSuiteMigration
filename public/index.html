@@ -1661,7 +1661,7 @@ function renderAssessment(assessment) {
   if (challenges.length) {
     document.getElementById('challenges-section').innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
-        ${challenges.map(c => `<span class="badge badge-yellow">⚠ ${esc(c)}</span>`).join('')}
+        ${challenges.map(c => `<span class="badge badge-yellow">⚠ ${esc(typeof c === 'object' ? (c.challenge || JSON.stringify(c)) : c)}</span>`).join('')}
       </div>`;
   }
 }
@@ -1687,7 +1687,14 @@ function downloadAssessmentReport() {
   });
   if ((ass.identified_challenges || []).length) {
     text += `\nIDENTIFIED CHALLENGES\n${'─'.repeat(40)}\n`;
-    (ass.identified_challenges || []).forEach(c => text += `  ⚠ ${c}\n`);
+    (ass.identified_challenges || []).forEach(c => {
+      if (typeof c === 'object') {
+        text += `  ⚠ ${c.challenge || ''}${c.description ? ': ' + c.description : ''}\n`;
+        if (c.mitigation) text += `    → Mitigation: ${c.mitigation}\n`;
+      } else {
+        text += `  ⚠ ${c}\n`;
+      }
+    });
   }
   downloadText(text, `${a.name}_Assessment.txt`);
   toast('Assessment report downloaded', 'success');
