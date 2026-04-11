@@ -16,6 +16,7 @@
 const AdmZip = require('adm-zip');
 const { buildMuleSoftBPMN } = require('./iflow-mulesoft-bpmn');
 const { buildBw6BPMN } = require('./iflow-tibco-bw6-bpmn');
+const { buildBw5BPMN } = require('./iflow-tibco-bw5-bpmn');
 const { buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
 
 // ── Main entry ────────────────────────────────────────────────────────────────
@@ -53,10 +54,18 @@ function generateIFlowPackage(artifact, platformData, conversionOutput) {
     dwScripts.forEach(s => {
       zip.addFile(`src/main/resources/script/${s.filename}`, Buffer.from(s.content));
     });
-  } else if (platform === 'tibco-bw6' && platformData.xsltTransforms && platformData.xsltTransforms.length > 0) {
+  } else if (platformData.platform === 'tibco-bw6' && platformData.xsltTransforms && platformData.xsltTransforms.length > 0) {
     // BW6: emit extracted XSLT 1.0 files — SAP IS supports natively, no translation needed
     platformData.xsltTransforms.forEach(xsl => {
       zip.addFile(`src/main/resources/mapping/${xsl.filename}`, Buffer.from(xsl.content));
+    });
+  } else if (platformData.platform === 'tibco-bw5') {
+    // BW5: emit XSLT files (from mapper activities) and Groovy stubs (from JavaCode activities)
+    (platformData.xsltTransforms || []).forEach(xsl => {
+      zip.addFile(`src/main/resources/mapping/${xsl.filename}`, Buffer.from(xsl.content));
+    });
+    (platformData.javaScripts || []).forEach(s => {
+      zip.addFile(`src/main/resources/script/${s.filename}`, Buffer.from(s.content));
     });
   } else if (artifact.has_scripting) {
     const scripts = buildGroovyScripts(artifact, platformData);
@@ -482,12 +491,19 @@ function buildFullBPMN(artifact, pd, iflowId, iflowName, platform, trigType, has
   }
 
   // ── TIBCO BW6: use real BW6 BPMN builder when processors were extracted ──
-  if (platform === 'tibco-bw6' && pd.processors && pd.processors.length > 0) {
-    const senderAdapterName  = pd.senderConfig  ? _adapterLabel(pd.senderConfig.type,  'sender')  : 'HTTP Sender Adapter';
+  if (pd.platform === 'tibco-bw6' && pd.processors && pd.processors.length > 0) {
+    const senderAdapterName   = pd.senderConfig ? _adapterLabel(pd.senderConfig.type, 'sender') : 'HTTP Sender Adapter';
     const receiverAdapterName = pd.receiverConfigs && pd.receiverConfigs[0]
-      ? _adapterLabel(pd.receiverConfigs[0].type, 'receiver')
-      : 'HTTP Receiver Adapter';
+      ? _adapterLabel(pd.receiverConfigs[0].type, 'receiver') : 'HTTP Receiver Adapter';
     return buildBw6BPMN(artifact, pd, iflowId, iflowName, senderAdapterName, receiverAdapterName);
+  }
+
+  // ── TIBCO BW5: use real BW5 BPMN builder when processors were extracted ──
+  if (pd.platform === 'tibco-bw5' && pd.processors && pd.processors.length > 0) {
+    const senderAdapterName   = pd.senderConfig ? _adapterLabel(pd.senderConfig.type, 'sender') : 'HTTP Sender Adapter';
+    const receiverAdapterName = pd.receiverConfigs && pd.receiverConfigs[0]
+      ? _adapterLabel(pd.receiverConfigs[0].type, 'receiver') : 'HTTP Receiver Adapter';
+    return buildBw5BPMN(artifact, pd, iflowId, iflowName, senderAdapterName, receiverAdapterName);
   }
 
   const senderAdapter  = mapSenderAdapter(trigType, platform, connTypes);
