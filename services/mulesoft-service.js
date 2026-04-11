@@ -31,13 +31,13 @@ async function parseAndPersist(filePath, originalName, projectId, sourceName) {
         (source_id, project_id, process_id, name, domain, platform, artifact_type, trigger_type,
          shapes_count, connectors_count, maps_count, has_scripting, scripting_detail, error_handling,
          dependencies_count, primary_connector, complexity_score, complexity_level, tshirt_size,
-         effort_days, readiness, raw_metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
+         effort_days, readiness, raw_metadata, raw_xml)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
       [source.id, projectId, art.process_id, art.name, art.domain, 'mulesoft',
        art.artifact_type, art.trigger_type, art.shapes_count, art.connectors_count, art.maps_count,
        art.has_scripting, art.scripting_detail, art.error_handling, art.dependencies_count,
        art.primary_connector, art.complexity_score, art.complexity_level, art.tshirt_size,
-       art.effort_days, art.readiness, JSON.stringify(art.raw_metadata || {})]
+       art.effort_days, art.readiness, JSON.stringify(art.raw_metadata || {}), art.raw_xml || null]
     );
     inserted.push(r.rows[0]);
   }
@@ -147,17 +147,36 @@ async function extractFlowsFromXml(xmlStr, projectMeta) {
 
   for (const flow of flows) {
     const art = analyseFlow(flow, 'Flow', projectMeta, subFlows.length, globalErrHandlers.length > 0);
-    if (art) artifacts.push(art);
+    if (art) {
+      art.raw_xml = extractFlowXml(xmlStr, art.name);
+      artifacts.push(art);
+    }
   }
 
   // Batch jobs (Mule 3) / batch:job (Mule 4)
   const batchJobs = root['batch:job'] || root['batch-job'] || [];
   for (const batch of batchJobs) {
     const art = analyseFlow(batch, 'Batch', projectMeta, 0, false);
-    if (art) artifacts.push(art);
+    if (art) {
+      art.raw_xml = extractFlowXml(xmlStr, art.name);
+      artifacts.push(art);
+    }
   }
 
   return artifacts;
+}
+
+// ── Extract the raw XML block for a named flow from the source XML string ─────
+function extractFlowXml(xmlStr, flowName) {
+  // Try to slice out the <flow name="flowName">...</flow> block
+  // This preserves the real DataWeave scripts, connector configs etc. for conversion
+  const escaped = flowName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(
+    `<(?:[a-z]+:)?(?:flow|batch:job)[^>]*name=["']${escaped}["'][^>]*>.*?</(?:[a-z]+:)?(?:flow|batch:job)>`,
+    'si'
+  );
+  const match = xmlStr.match(pattern);
+  return match ? match[0] : xmlStr; // fallback: store full file XML
 }
 
 // ── Analyse a single flow element ─────────────────────────────────────────────

@@ -117,6 +117,38 @@ async function initDb() {
       );
     `);
 
+    // ── S0: Knowledge Base — migration accelerator intelligence store ──────────
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS knowledge_base (
+        id SERIAL PRIMARY KEY,
+        category VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        platform VARCHAR(50),
+        tags TEXT[] DEFAULT '{}',
+        source VARCHAR(100) DEFAULT 'manual',
+        search_vector tsvector GENERATED ALWAYS AS (
+          to_tsvector('english', coalesce(title,'') || ' ' || coalesce(content,'') || ' ' || coalesce(category,''))
+        ) STORED,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS knowledge_base_search_idx ON knowledge_base USING GIN(search_vector);
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS knowledge_base_category_idx ON knowledge_base (category);
+    `);
+
+    // ── S1: Add raw_xml + conversion tracking columns to artifacts ─────────────
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS raw_xml TEXT`);
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS conversion_status VARCHAR(20) DEFAULT 'pending'`);
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS converted_at TIMESTAMP`);
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS iflow_xml TEXT`);
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS conversion_notes JSONB DEFAULT '[]'`);
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS conversion_completeness INT DEFAULT 0`);
+
     console.log('Database schema initialized.');
   } finally {
     client.release();

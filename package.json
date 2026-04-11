@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "seed": "node database/seed.js"
+    "seed": "node database/seed.js",
+    "seed:knowledge": "node database/seed-knowledge.js",
+    "mcp": "node mcp/knowledge-server.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",

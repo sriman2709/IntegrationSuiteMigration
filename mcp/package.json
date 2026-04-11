@@ -1,0 +1,17 @@
+{
+  "name": "is-migration-knowledge-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for IS Migration Accelerator knowledge base",
+  "main": "knowledge-server.js",
+  "bin": {
+    "is-migration-knowledge": "./knowledge-server.js"
+  },
+  "scripts": {
+    "start": "node knowledge-server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^16.6.1",
+    "pg": "^8.20.0"
+  }
+}

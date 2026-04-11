@@ -33,13 +33,13 @@ async function parseAndPersist(filePath, originalName, projectId, sourceName) {
         (source_id, project_id, process_id, name, domain, platform, artifact_type, trigger_type,
          shapes_count, connectors_count, maps_count, has_scripting, scripting_detail, error_handling,
          dependencies_count, primary_connector, complexity_score, complexity_level, tshirt_size,
-         effort_days, readiness, raw_metadata)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22) RETURNING *`,
+         effort_days, readiness, raw_metadata, raw_xml)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
       [source.id, projectId, art.process_id, art.name, art.domain, 'tibco',
        art.artifact_type, art.trigger_type, art.shapes_count, art.connectors_count, art.maps_count,
        art.has_scripting, art.scripting_detail, art.error_handling, art.dependencies_count,
        art.primary_connector, art.complexity_score, art.complexity_level, art.tshirt_size,
-       art.effort_days, art.readiness, JSON.stringify(art.raw_metadata || {})]
+       art.effort_days, art.readiness, JSON.stringify(art.raw_metadata || {}), art.raw_xml || null]
     );
     inserted.push(r.rows[0]);
   }
@@ -55,10 +55,318 @@ async function deepParse(filePath, originalName) {
   return parseSingleProcess(filePath);
 }
 
-// ── Parse BW project ZIP ──────────────────────────────────────────────────────
+// ── Parse BW project ZIP — auto-detects BW5 vs BW6 ──────────────────────────
 async function parseBwProjectZip(zipPath) {
   const zip     = new AdmZip(zipPath);
   const entries = zip.getEntries();
+
+  // BW6: project contains .bwp files (BPWS XML format)
+  const bw6Entries = entries.filter(e => e.entryName.endsWith('.bwp'));
+  if (bw6Entries.length > 0) {
+    return parseBw6ProjectZip(zip, entries, zipPath);
+  }
+
+  // BW5: project contains .process files or BW XML
+  return parseBw5ProjectZip(zip, entries, zipPath);
+}
+
+// ── Parse BW6 project ZIP (TIBCO BW Container Edition / BW 6.x) ─────────────
+async function parseBw6ProjectZip(zip, entries, zipPath) {
+  const artifacts = [];
+  const xsdCount  = entries.filter(e => e.entryName.endsWith('.xsd')).length;
+  const wsdlCount = entries.filter(e => e.entryName.endsWith('.wsdl')).length;
+
+  // Collect service descriptor metadata from .bwext or .module files
+  const moduleEntries = entries.filter(e =>
+    e.entryName.endsWith('.bwext') || e.entryName.endsWith('.module') ||
+    (e.entryName.endsWith('.xml') && e.entryName.includes('module'))
+  );
+  const moduleBindings = {}; // partnerLinkType → connector type
+  for (const entry of moduleEntries) {
+    try {
+      const xml = entry.getData().toString('utf8');
+      extractBw6Bindings(xml, moduleBindings);
+    } catch (e) { /* ignore */ }
+  }
+
+  // Parse all .bwp process files
+  const bwpEntries = entries.filter(e => e.entryName.endsWith('.bwp'));
+  for (const entry of bwpEntries) {
+    try {
+      const xml  = entry.getData().toString('utf8');
+      const arts = await extractBw6Processes(xml, entry.entryName, moduleBindings, { xsdCount, wsdlCount });
+      // Store the raw .bwp XML on each artifact — conversion engine needs this for XSLT extraction
+      arts.forEach(a => { a.raw_xml = xml; });
+      artifacts.push(...arts);
+    } catch (e) {
+      console.warn(`[TIBCO BW6] Failed to parse ${entry.entryName}:`, e.message);
+    }
+  }
+
+  if ((wsdlCount + xsdCount) > 3) {
+    artifacts.forEach(a => {
+      if (a.maps_count > 0) {
+        a.scripting_detail = (a.scripting_detail || '') + ` (+${wsdlCount} WSDLs, ${xsdCount} XSDs)`;
+      }
+    });
+  }
+
+  return artifacts.length > 0 ? artifacts : fallbackArtifacts(zipPath);
+}
+
+// ── Extract connector bindings from BW6 module descriptor ────────────────────
+function extractBw6Bindings(xmlStr, bindings) {
+  const lines = xmlStr.split('\n');
+  // Heuristic: look for binding references in module XML
+  for (const line of lines) {
+    if (/jdbc|database|sql/i.test(line))      bindings['jdbc'] = 'JDBC';
+    if (/jms|activemq|tibco\.ems/i.test(line)) bindings['jms'] = 'JMS';
+    if (/http|rest|soap/i.test(line))          bindings['http'] = 'HTTP';
+    if (/ftp|sftp/i.test(line))                bindings['ftp'] = 'SFTP';
+    if (/smtp|mail|email/i.test(line))         bindings['smtp'] = 'SMTP';
+    if (/sap|bapi|rfc/i.test(line))            bindings['sap'] = 'SAP';
+    if (/salesforce/i.test(line))              bindings['sf'] = 'Salesforce';
+    if (/s3|aws/i.test(line))                  bindings['s3'] = 'S3';
+    if (/kafka/i.test(line))                   bindings['kafka'] = 'Kafka';
+    if (/mongodb|mongo/i.test(line))           bindings['mongo'] = 'MongoDB';
+  }
+}
+
+// ── Extract processes from BW6 .bwp file (BPWS XML) ─────────────────────────
+async function extractBw6Processes(xmlStr, entryName, moduleBindings, projectMeta) {
+  const p = makeParser();
+  let doc;
+  try { doc = await p.parseStringPromise(xmlStr); }
+  catch (e) { return []; }
+
+  const artifacts = [];
+
+  // Root element is <bpws:process> — after stripPrefix becomes 'process'
+  const procEl = doc['process'];
+  if (!procEl) return [];
+
+  const procArr = Array.isArray(procEl) ? procEl : [procEl];
+  for (const proc of procArr) {
+    const art = analyseBw6Process(proc, entryName, moduleBindings, projectMeta);
+    if (art) artifacts.push(art);
+  }
+
+  return artifacts;
+}
+
+// ── Analyse a single BW6 <bpws:process> element ──────────────────────────────
+function analyseBw6Process(proc, entryName, moduleBindings, projectMeta) {
+  const attrs = proc['$'] || {};
+  // Name like "creditapp.module.MainProcess" — use last segment
+  const fullName  = attrs.name || path.basename(entryName, '.bwp');
+  const nameParts = fullName.split('.');
+  const name      = nameParts[nameParts.length - 1] || fullName;
+
+  if (!name || name.startsWith('_')) return null;
+
+  const connectorTypes = new Set();
+  let shapesCount    = 0;
+  let mapsCount      = 0;
+  let scriptingLevel = 0;
+  let hasErrorHandler = false;
+  let triggerType    = 'API';
+
+  // Helper: recursively walk any XML node collecting activity info
+  function walkNode(node) {
+    if (!node || typeof node !== 'object') return;
+    const keys = Object.keys(node).filter(k => k !== '$');
+    for (const key of keys) {
+      const els = Array.isArray(node[key]) ? node[key] : [node[key]];
+      const k   = key.toLowerCase();
+
+      // Trigger detection
+      if (k === 'receive' || k === 'pick') {
+        // <bpws:receive> = inbound trigger
+        shapesCount++;
+        for (const el of els) {
+          const ea = (el && el['$']) ? el['$'] : {};
+          const op = (ea.operation || ea.portType || '').toLowerCase();
+          if (/timer|schedule|cron/i.test(op)) triggerType = 'Schedule';
+          else if (/jms|ems|queue|topic/i.test(op)) { triggerType = 'Event'; connectorTypes.add('JMS'); }
+          else if (/file|sftp|ftp/i.test(op)) { triggerType = 'Listener'; connectorTypes.add('SFTP'); }
+          // Also check TIBCO extension attributes
+          walkNode(el);
+        }
+      }
+
+      // Outbound invoke
+      if (k === 'invoke') {
+        shapesCount += els.length;
+        for (const el of els) {
+          const ea = (el && el['$']) ? el['$'] : {};
+          const pl = (ea.partnerLink || '').toLowerCase();
+          const op = (ea.operation || ea.portType || '').toLowerCase();
+          const combined = pl + ' ' + op;
+          if (/jdbc|sql|db|database/i.test(combined))         connectorTypes.add('JDBC');
+          else if (/jms|ems|queue|topic|activemq/i.test(combined)) connectorTypes.add('JMS');
+          else if (/ftp|sftp/i.test(combined))                connectorTypes.add('SFTP');
+          else if (/smtp|mail/i.test(combined))               connectorTypes.add('SMTP');
+          else if (/sap|bapi|rfc/i.test(combined))            connectorTypes.add('SAP');
+          else if (/salesforce|sfdc/i.test(combined))         connectorTypes.add('Salesforce');
+          else if (/s3|aws/i.test(combined))                  connectorTypes.add('S3');
+          else if (/kafka/i.test(combined))                   connectorTypes.add('Kafka');
+          else if (/mongo/i.test(combined))                   connectorTypes.add('MongoDB');
+          else                                                 connectorTypes.add('HTTP');
+          walkNode(el);
+        }
+      }
+
+      // Assign = data mapping / transform
+      if (k === 'assign') {
+        shapesCount += els.length;
+        mapsCount   += els.length;
+        scriptingLevel = Math.max(scriptingLevel, 1);
+        for (const el of els) {
+          // Count copy statements as mapping complexity
+          const copies = el['copy'] || el['Copy'] || [];
+          if (copies.length > 15) scriptingLevel = Math.max(scriptingLevel, 2);
+        }
+      }
+
+      // TIBCO extension activities (tibex: → stripped to bare name)
+      if (k === 'activity' || k.includes('activity')) {
+        shapesCount += els.length;
+        for (const el of els) {
+          const ea   = (el && el['$']) ? el['$'] : {};
+          const type = (ea.type || ea['xsi:type'] || key).toLowerCase();
+          if (/jdbc|sql|database|db/i.test(type))              connectorTypes.add('JDBC');
+          else if (/jms|ems|activemq/i.test(type))             connectorTypes.add('JMS');
+          else if (/http|rest|soap/i.test(type))               connectorTypes.add('HTTP');
+          else if (/ftp|sftp/i.test(type))                     connectorTypes.add('SFTP');
+          else if (/file/i.test(type))                         connectorTypes.add('File');
+          else if (/smtp|mail|email/i.test(type))              connectorTypes.add('SMTP');
+          else if (/sap|bapi|rfc/i.test(type))                 connectorTypes.add('SAP');
+          else if (/salesforce/i.test(type))                   connectorTypes.add('Salesforce');
+          else if (/kafka/i.test(type))                        connectorTypes.add('Kafka');
+          else if (/mongo/i.test(type))                        connectorTypes.add('MongoDB');
+          if (/mapper|transform|map/i.test(type))              { mapsCount++; scriptingLevel = Math.max(scriptingLevel, 1); }
+          if (/java|script|groovy/i.test(type))                scriptingLevel = 2;
+          if (/timer|schedule|cron/i.test(type))               triggerType = 'Schedule';
+          walkNode(el);
+        }
+      }
+
+      // Mapper activity (TIBCO BW6 mapper element)
+      if (k === 'mapper' || k === 'tns:mapper') {
+        shapesCount += els.length;
+        mapsCount   += els.length;
+        scriptingLevel = Math.max(scriptingLevel, 1);
+      }
+
+      // Error handlers
+      if (k === 'faulthandlers' || k === 'catch' || k === 'catchall') {
+        hasErrorHandler = true;
+        shapesCount++;
+      }
+
+      // Scope (wraps activities, can have fault handlers)
+      if (k === 'scope') {
+        shapesCount += els.length;
+        for (const el of els) walkNode(el);
+      }
+
+      // Sequence / flow containers — count them as shapes
+      if (k === 'sequence' || k === 'flow' || k === 'while' || k === 'repeatuntil' || k === 'if') {
+        shapesCount++;
+        for (const el of els) walkNode(el);
+      }
+
+      // Reply = output step
+      if (k === 'reply') { shapesCount += els.length; }
+
+      // Throw = error throw
+      if (k === 'throw') { shapesCount += els.length; hasErrorHandler = true; }
+    }
+  }
+
+  walkNode(proc);
+
+  // Enrich connectors from module-level bindings
+  for (const [, type] of Object.entries(moduleBindings)) {
+    connectorTypes.add(type);
+  }
+
+  // Detect trigger from partnerLinks (BW6 pattern)
+  const partnerLinks = proc['partnerLinks'] || proc['PartnerLinks'];
+  if (partnerLinks) {
+    const plArr = Array.isArray(partnerLinks) ? partnerLinks : [partnerLinks];
+    for (const plGroup of plArr) {
+      const links = plGroup['partnerLink'] || plGroup['PartnerLink'] || [];
+      for (const link of links) {
+        const la   = (link && link['$']) ? link['$'] : {};
+        const plt  = (la.partnerLinkType || la.name || '').toLowerCase();
+        if (/timer|schedule/i.test(plt))                      triggerType = 'Schedule';
+        else if (/jms|ems|queue|topic/i.test(plt))            { triggerType = 'Event';    connectorTypes.add('JMS'); }
+        else if (/file|sftp|ftp/i.test(plt))                  { triggerType = 'Listener'; connectorTypes.add('SFTP'); }
+        else if (/jdbc|sql|db/i.test(plt))                    connectorTypes.add('JDBC');
+        else if (/smtp|mail/i.test(plt))                      connectorTypes.add('SMTP');
+        else if (/sap|bapi/i.test(plt))                       connectorTypes.add('SAP');
+        else if (/salesforce/i.test(plt))                     connectorTypes.add('Salesforce');
+        else if (/kafka/i.test(plt))                          connectorTypes.add('Kafka');
+      }
+    }
+  }
+
+  // Derive trigger from connector set if still default
+  if (triggerType === 'API') {
+    if (connectorTypes.has('JMS') && !connectorTypes.has('HTTP'))   triggerType = 'Event';
+    if (connectorTypes.has('SFTP') && !connectorTypes.has('HTTP'))  triggerType = 'Listener';
+  }
+
+  const connectorsCount = Math.max(connectorTypes.size, 1);
+  const estimatedShapes = Math.max(shapesCount, 5);
+  const errorLevel      = hasErrorHandler ? 2 : 1;
+  const mapsComplexity  = mapsCount > 3 ? 3 : mapsCount > 1 ? 2 : mapsCount > 0 ? 1 : 0;
+  const primaryConnector = [...connectorTypes][0] || detectConnectorFromName(name);
+  const domain           = inferDomain(name);
+  const dependencies     = projectMeta.xsdCount > 0 ? Math.min(Math.floor(projectMeta.xsdCount / 2), 5) : 0;
+
+  const score = computeComplexityScore({
+    shapes_count: estimatedShapes, connectors_count: connectorsCount,
+    maps_complexity: mapsComplexity, scripting_level: scriptingLevel,
+    error_handling_level: errorLevel, dependencies_count: dependencies
+  });
+  const cl = classifyComplexity(score);
+
+  const scriptingDetail = scriptingLevel >= 2
+    ? 'Custom scripting / Java code detected'
+    : mapsCount > 0 ? `${mapsCount} BW6 mapper(s)` : null;
+
+  return {
+    process_id: `tibco-${name.replace(/[\s/\\]+/g, '_')}-${Date.now()}`,
+    name,
+    domain,
+    platform:          'tibco',
+    artifact_type:     'BW6Process',
+    trigger_type:      triggerType,
+    shapes_count:      estimatedShapes,
+    connectors_count:  connectorsCount,
+    maps_count:        mapsCount,
+    has_scripting:     scriptingLevel > 0,
+    scripting_detail:  scriptingDetail,
+    error_handling:    errorLevel >= 2 ? 'try_catch' : 'basic',
+    dependencies_count: dependencies,
+    primary_connector: primaryConnector,
+    complexity_score:  score,
+    complexity_level:  cl.level,
+    tshirt_size:       cl.tshirt,
+    effort_days:       cl.effort,
+    readiness:         scriptingLevel >= 2 ? 'Partial' : score > 60 ? 'Manual' : 'Auto',
+    raw_metadata: {
+      connectorTypes: [...connectorTypes], triggerType, mapsCount,
+      hasErrorHandler, scriptingLevel, bwVersion: '6.x',
+      dataSource: 'file_upload'
+    }
+  };
+}
+
+// ── Parse BW5 project ZIP (original logic extracted) ─────────────────────────
+async function parseBw5ProjectZip(zip, entries, zipPath) {
   const artifacts = [];
 
   // Collect shared resource metadata
@@ -89,9 +397,11 @@ async function parseBwProjectZip(zipPath) {
     try {
       const xml  = entry.getData().toString('utf8');
       const arts = await extractProcesses(xml, sharedResources, { subvarCount, wsdlCount, xsdCount });
+      // Store raw ProcessDef XML on each artifact
+      arts.forEach(a => { a.raw_xml = xml; });
       artifacts.push(...arts);
     } catch (e) {
-      console.warn(`[TIBCO] Failed to parse ${entry.entryName}:`, e.message);
+      console.warn(`[TIBCO BW5] Failed to parse ${entry.entryName}:`, e.message);
     }
   }
 
