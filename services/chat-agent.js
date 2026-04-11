@@ -12,7 +12,18 @@
 const { pool } = require('../database/db');
 const { OpenAI } = require('openai');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Lazy-initialised so a missing key at startup doesn't crash the process.
+// The error surfaces only when a chat request is actually made.
+let _openai = null;
+function getOpenAI() {
+  if (!_openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY is not configured in Application Settings.');
+    }
+    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return _openai;
+}
 
 // ── Main entry — called by routes/chat.js, writes SSE to res ────────────────
 async function streamChatResponse(question, projectId, res) {
@@ -24,7 +35,7 @@ async function streamChatResponse(question, projectId, res) {
 
   // 3. Stream from OpenAI GPT-4o
   try {
-    const stream = await openai.chat.completions.create({
+    const stream = await getOpenAI().chat.completions.create({
       model: 'gpt-4o',
       stream: true,
       max_tokens: 1024,
