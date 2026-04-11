@@ -128,6 +128,61 @@ function findRoot(parsed) {
 }
 
 // ── Extract activities from process root ──────────────────────────────────────
+// ── Map BW6 activityTypeID → activity role ────────────────────────────────────
+// BW6 stores the canonical type in BWActivity[0].$.activityTypeID
+// e.g. "bw.generalactivities.log", "bw.file.write", "bw.http.HTTPClientSend"
+function bw6ActivityRole(extEl) {
+  // Pull activityTypeID from config/BWActivity
+  const config  = extEl?.config?.[0];
+  const bwAct   = config?.BWActivity?.[0];
+  const typeId  = (bwAct?.['$']?.activityTypeID || '').toLowerCase();
+
+  if (!typeId) {
+    // Fallback: stringify search for older formats
+    const xmlStr = JSON.stringify(extEl);
+    if (/bw\.http|httpconnector|httpclient/i.test(xmlStr))   return 'invoke-http';
+    if (/bw\.soap|soapsend/i.test(xmlStr))                   return 'invoke-soap';
+    if (/bw\.jms|jmssend/i.test(xmlStr))                     return 'invoke-jms';
+    if (/bw\.jdbc/i.test(xmlStr))                             return 'invoke-jdbc';
+    if (/bw\.file\.write/i.test(xmlStr))                      return 'invoke-file-write';
+    if (/bw\.file\.read/i.test(xmlStr))                       return 'invoke-file-read';
+    if (/bw\.sftp/i.test(xmlStr))                             return 'invoke-sftp';
+    if (/bw\.mail|bw\.smtp/i.test(xmlStr))                    return 'invoke-smtp';
+    if (/bw\.sap|bw\.rfc/i.test(xmlStr))                      return 'invoke-sap';
+    if (/generalactivities\.log|writetolog/i.test(xmlStr))    return 'log';
+    if (/generalactivities\.mapper|xslttransform/i.test(xmlStr)) return 'xslt';
+    if (/generalactivities\.generateerror/i.test(xmlStr))     return 'throw';
+    if (/internal\.end/i.test(xmlStr))                        return 'end';
+    if (/internal\.callprocess|subprocess/i.test(xmlStr))     return 'processCall';
+    return 'activity';
+  }
+
+  // Canonical mapping via activityTypeID
+  if (typeId.includes('bw.internal.end'))              return 'end';
+  if (typeId.includes('bw.internal.start'))            return 'trigger';
+  if (typeId.includes('bw.internal.callprocess'))      return 'processCall';
+  if (typeId.includes('bw.generalactivities.log'))     return 'log';
+  if (typeId.includes('bw.generalactivities.mapper') ||
+      typeId.includes('bw.xml.xslttransform'))         return 'xslt';
+  if (typeId.includes('bw.generalactivities.generate')) return 'throw';
+  if (typeId.includes('bw.generalactivities.sleep'))   return 'log'; // timer → treat as step
+  if (typeId.includes('bw.http'))                      return 'invoke-http';
+  if (typeId.includes('bw.soap'))                      return 'invoke-soap';
+  if (typeId.includes('bw.jms') || typeId.includes('bw.ems')) return 'invoke-jms';
+  if (typeId.includes('bw.jdbc'))                      return 'invoke-jdbc';
+  if (typeId.includes('bw.file.write'))                return 'invoke-file-write';
+  if (typeId.includes('bw.file.read'))                 return 'invoke-file-read';
+  if (typeId.includes('bw.sftp'))                      return 'invoke-sftp';
+  if (typeId.includes('bw.mail') || typeId.includes('bw.smtp')) return 'invoke-smtp';
+  if (typeId.includes('bw.sap') || typeId.includes('bw.rfc'))   return 'invoke-sap';
+  if (typeId.includes('bw.xml'))                       return 'xslt';
+  if (typeId.includes('bw.rest'))                      return 'invoke-http';
+  if (typeId.includes('bw.ftp'))                       return 'invoke-sftp';
+  if (typeId.includes('bw.tcp'))                       return 'invoke-http';
+
+  return 'activity'; // unrecognised but still counted
+}
+
 function extractActivities(root) {
   const activities = [];
   let seq = 0;
@@ -143,7 +198,30 @@ function extractActivities(root) {
         const attrs = el['$'] || {};
         const actName = attrs.name || attrs.Name || `activity_${seq}`;
 
-        if (k === 'receive') {
+        // ── BW6 primary pattern: <bpws:extensionActivity> ──────────────────
+        if (k === 'extensionactivity') {
+          // Find the inner activityExtension or starterExtension
+          const extKey = Object.keys(el).find(k2 =>
+            /activityextension|starterextension/i.test(k2)
+          );
+          if (extKey) {
+            const extEls = Array.isArray(el[extKey]) ? el[extKey] : [el[extKey]];
+            for (const extEl of extEls) {
+              const extAttrs = extEl['$'] || {};
+              const name = extAttrs.name || extAttrs.Name || actName;
+              const role = /starterextension/i.test(extKey) ? 'trigger' : bw6ActivityRole(extEl);
+              // Skip pure end events from processor count but keep for flow
+              if (role !== 'end') {
+                activities.push({ seq: seq++, key: extKey, k: role, name, role, raw: extEl });
+              }
+            }
+          } else {
+            // extensionActivity without known child — walk deeper
+            walk(el, depth + 1);
+          }
+
+        // ── Standard BPEL elements ──────────────────────────────────────────
+        } else if (k === 'receive') {
           activities.push({ seq: seq++, key, k, name: actName, role: 'trigger', raw: el });
         } else if (k === 'invoke') {
           activities.push({ seq: seq++, key, k, name: actName, role: 'invoke', raw: el });
@@ -157,15 +235,14 @@ function extractActivities(root) {
           activities.push({ seq: seq++, key, k, name: actName, role: 'throw', raw: el });
         } else if (k === 'scope') {
           activities.push({ seq: seq++, key, k, name: actName, role: 'scope', raw: el });
-          walk(el, depth + 1); // recurse into scope
+          walk(el, depth + 1);
         } else if (k === 'if' || k === 'switch') {
           activities.push({ seq: seq++, key, k, name: actName, role: 'router', raw: el });
-        } else if (k === 'forEach' || k === 'while' || k === 'repeatuntil') {
+        } else if (k === 'foreach' || k === 'while' || k === 'repeatuntil') {
           activities.push({ seq: seq++, key, k, name: actName, role: 'loop', raw: el });
         } else if (k === 'flow' || k === 'sequence') {
           walk(el, depth + 1); // transparent containers
         } else if (k === 'activity') {
-          // TIBCO extension activity
           activities.push({ seq: seq++, key, k, name: actName, role: 'activity', raw: el });
           walk(el, depth + 1);
         }
@@ -304,6 +381,45 @@ function buildProcessor(act, artifact) {
   // Scope
   if (act.role === 'scope') {
     return { type: 'scope', label: name, config: {} };
+  }
+
+  // ── BW6 extensionActivity roles (from bw6ActivityRole) ─────────────────────
+  if (act.role === 'log') {
+    return { type: 'contentModifier', label: name, config: { isLog: true } };
+  }
+
+  if (act.role === 'xslt') {
+    const xslt = extractXsltFromNode(raw);
+    if (xslt) {
+      const safeName = `${artifact.name.replace(/[^a-zA-Z0-9]/g, '_')}_${name.replace(/[^a-zA-Z0-9]/g, '_')}.xsl`;
+      return { type: 'xslt', label: name, config: { xslFile: safeName, xsltContent: xslt } };
+    }
+    return { type: 'xslt', label: name, config: {} };
+  }
+
+  if (act.role === 'processCall') {
+    return { type: 'processCall', label: name, config: {} };
+  }
+
+  if (act.role === 'throw') {
+    return { type: 'throw', label: name, config: {} };
+  }
+
+  // invoke-* roles from extensionActivity
+  if (act.role && act.role.startsWith('invoke-')) {
+    const connMap = {
+      'invoke-http':       'HTTP',
+      'invoke-soap':       'SOAP',
+      'invoke-jms':        'JMS',
+      'invoke-jdbc':       'JDBC',
+      'invoke-sftp':       'SFTP',
+      'invoke-file-write': 'SFTP',
+      'invoke-file-read':  'SFTP',
+      'invoke-smtp':       'SMTP',
+      'invoke-sap':        'SAP'
+    };
+    const connType = connMap[act.role] || 'HTTP';
+    return { type: 'invoke', label: name, config: { connType } };
   }
 
   // Generic activity
