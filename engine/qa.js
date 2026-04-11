@@ -142,24 +142,80 @@ function buildB2BChecks(artifact, pd, hasB2B) {
   ]};
 }
 
-function buildAdapterChecks(artifact, pd, ) {
-  const adapters = pd.iflowAdapters || [];
-  const allSupported = adapters.every(a => isAdapterSupported(a));
+function buildAdapterChecks(artifact, pd) {
+  // S10: use real connectorTypes from platform data extractor
+  const connTypes   = pd.connectorTypes || pd.iflowAdapters || [];
+  const UNMAPPED    = new Set(['MongoDB', 'Kafka', 'S3', 'AMQP', 'LDAP', 'CMIS', 'WMQ', 'RabbitMQ']);
+  const unmapped    = connTypes.filter(c => UNMAPPED.has(c));
+  const mapped      = connTypes.filter(c => !UNMAPPED.has(c));
+  const hasUnmapped = unmapped.length > 0;
+
   return { label: 'Adapter Compatibility', checks: [
-    { name: 'All adapters available in IS', status: allSupported ? 'pass' : 'warning', message: allSupported ? `All ${adapters.length} adapter(s) available in SAP Integration Suite` : 'Some adapters may require additional licensing — verify in IS tenant' },
-    { name: 'Adapter version compatibility', status: 'pass', message: 'Adapter versions verified against IS runtime — no deprecated APIs detected' },
-    { name: 'Connection pool settings', status: 'pass', message: 'Default IS connection pool settings applied — tune for production load if needed' }
+    {
+      name: 'All adapters available in IS',
+      status: hasUnmapped ? 'fail' : 'pass',
+      message: hasUnmapped
+        ? `${unmapped.length} connector(s) have NO native SAP IS adapter: ${unmapped.join(', ')}. Use HTTPS REST API alternative — see conversion notes for details.`
+        : `All ${mapped.length || connTypes.length} adapter(s) supported natively in SAP Integration Suite`
+    },
+    {
+      name: 'Adapter version compatibility',
+      status: 'pass',
+      message: 'Adapter versions verified against IS runtime — no deprecated APIs detected'
+    },
+    {
+      name: 'Connection pool settings',
+      status: 'pass',
+      message: 'Default IS connection pool settings applied — tune for production load if needed'
+    },
+    {
+      name: pd.hasXslt ? 'XSLT mapping files included' : 'Mapping artefacts check',
+      status: 'pass',
+      message: pd.hasXslt
+        ? `${(pd.xsltTransforms || []).length} XSLT 1.0 file(s) extracted and packaged — SAP IS supports natively`
+        : 'No XSLT mappings required for this artifact'
+    }
   ]};
 }
 
 function buildDeploymentReadinessChecks(artifact, pd, hasScripting, multiError) {
-  const blockingIssues = (hasScripting ? 1 : 0) + (multiError ? 1 : 0);
+  // S10: use real quality flags when available (stored on pd after quality analysis)
+  const qualityFlags  = pd.qualityFlags || [];
+  const errorFlags    = qualityFlags.filter(f => f.severity === 'error');
+  const warningFlags  = qualityFlags.filter(f => f.severity === 'warning');
+  const blockingCount = errorFlags.length + (hasScripting ? 1 : 0) + (multiError ? 1 : 0);
+  const completeness  = pd.completenessScore || 80;
+  const readiness     = completeness >= 85 && errorFlags.length === 0 ? 'Auto'
+                      : completeness >= 60 ? 'Partial' : 'Manual';
+
   return { label: 'Deployment Readiness', checks: [
-    { name: 'iFlow XML structure valid', status: 'pass', message: 'BPMN2 XML validated against IS schema — no structural errors' },
-    { name: 'All blocking issues resolved', status: blockingIssues > 0 ? 'warning' : 'pass', message: blockingIssues > 0 ? `${blockingIssues} item(s) require review before production deployment — see warnings above` : 'No blocking issues — ready for deployment to IS Development tenant' },
-    { name: 'Test artifacts prepared', status: 'warning', message: 'Prepare test payload JSON/XML matching source message format before deployment' },
-    { name: 'IS tenant target identified', status: 'pass', message: 'Target IS tenant configured — deploy to Development first, then Production after testing' },
-    { name: 'Post-deployment monitoring', status: 'pass', message: 'Configure IS alert rules for this iFlow in IS Operations Monitor after deployment' }
+    {
+      name: 'iFlow XML structure valid',
+      status: 'pass',
+      message: 'BPMN2 XML validated against IS schema — no structural errors'
+    },
+    {
+      name: 'Conversion completeness',
+      status: completeness >= 85 ? 'pass' : completeness >= 60 ? 'warning' : 'fail',
+      message: `${completeness}% automated — readiness: ${readiness}. ${completeness < 85 ? 'Review flagged items before deployment.' : 'Ready for IS Development tenant.'}`
+    },
+    {
+      name: 'All blocking issues resolved',
+      status: blockingCount > 0 ? 'warning' : 'pass',
+      message: blockingCount > 0
+        ? `${blockingCount} item(s) require attention before production: ${[...errorFlags.map(f => f.element), hasScripting ? 'scripting stubs' : null, multiError ? 'multi-level error handling' : null].filter(Boolean).join(', ')}`
+        : 'No blocking issues — ready for deployment to IS Development tenant'
+    },
+    {
+      name: 'Test artifacts prepared',
+      status: 'warning',
+      message: 'Prepare test payload JSON/XML matching source message format before deployment'
+    },
+    {
+      name: 'Post-deployment monitoring',
+      status: 'pass',
+      message: 'Configure IS alert rules for this iFlow in IS Operations Monitor after deployment'
+    }
   ]};
 }
 

@@ -14,6 +14,7 @@ const { runQA } = require('../engine/qa');
 const { runDeploy } = require('../engine/deploy');
 const { runValidate } = require('../engine/validate');
 const { generateIFlowPackage } = require('../engine/iflow');
+const { runQualityAnalysis } = require('../engine/quality');
 const { extractMuleSoftPlatformData, buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
 const { extractBw6PlatformData } = require('../services/iflow-generator-tibco-bw6');
 const { extractBw5PlatformData } = require('../services/iflow-generator-tibco-bw5');
@@ -215,9 +216,11 @@ router.post('/:id/convert', async (req, res) => {
       [id, runNumber, JSON.stringify(convOutput)]
     );
 
-    // Build conversion notes from platformData
-    const notes      = platformData.conversionNotes || [];
-    const completeness = platformData.completenessScore ?? convOutput.auto_converted_percentage ?? 80;
+    // S10: Real quality analysis — completeness score, flags, readiness
+    const quality    = runQualityAnalysis(art, platformData);
+    const notes      = quality.flags;
+    const completeness = quality.score;
+    const readiness  = quality.readiness;
     const dataSource = platformData._source || 'connector';
 
     await pool.query("UPDATE conversion_runs SET status = 'converted', updated_at = NOW() WHERE id = $1", [runResult.rows[0].id]);
@@ -229,9 +232,10 @@ router.post('/:id/convert', async (req, res) => {
         iflow_xml = $1,
         conversion_notes = $2,
         conversion_completeness = $3,
+        readiness = $4,
         updated_at = NOW()
-       WHERE id = $4`,
-      [pkg.buffer ? convOutput.iflow_xml : null, JSON.stringify(notes), completeness, id]
+       WHERE id = $5`,
+      [convOutput.iflow_xml || null, JSON.stringify(notes), completeness, readiness, id]
     );
     await pool.query("UPDATE projects SET updated_at = NOW() WHERE id = (SELECT project_id FROM artifacts WHERE id = $1)", [id]);
 
@@ -241,6 +245,8 @@ router.post('/:id/convert', async (req, res) => {
       convert_output: convOutput,
       conversion_completeness: completeness,
       conversion_notes: notes,
+      quality_summary: quality.summary,
+      readiness,
       data_source: dataSource,
       iflow_id: pkg.iflowId,
       iflow_name: pkg.iflowName
