@@ -154,26 +154,62 @@ router.post('/:id/assess', async (req, res) => {
     const scripts     = platformData.javaScripts || platformData.scripts || [];
     const connTypes   = platformData.connectorTypes || [];
     const recvCfgs    = platformData.receiverConfigs || [];
-    const derivedShapes      = processors.length || art.shapes_count || 0;
-    const derivedConnectors  = (connTypes.length || recvCfgs.length) || art.connectors_count || 0;
-    const derivedMaps        = xslts.length || art.maps_count || 0;
-    const derivedScripting   = scripts.length > 0 || art.has_scripting || false;
+    const errorHandlers = platformData.errorHandlers || [];
 
-    if (derivedShapes !== art.shapes_count || derivedConnectors !== art.connectors_count ||
-        derivedMaps !== art.maps_count || derivedScripting !== art.has_scripting) {
-      await pool.query(
-        `UPDATE artifacts SET shapes_count=$1, connectors_count=$2, maps_count=$3,
-          has_scripting=$4, primary_connector=$5, updated_at=NOW() WHERE id=$6`,
-        [derivedShapes, derivedConnectors, derivedMaps, derivedScripting,
-         connTypes[0] || art.primary_connector || 'HTTP', id]
-      );
-      // Reflect in local art object so assessment uses the real numbers
-      art.shapes_count     = derivedShapes;
-      art.connectors_count = derivedConnectors;
-      art.maps_count       = derivedMaps;
-      art.has_scripting    = derivedScripting;
-      art.primary_connector = connTypes[0] || art.primary_connector || 'HTTP';
-    }
+    // Count xslt-type processors + standalone xsltTransforms for maps
+    const xsltProcessors = processors.filter(p => p.type === 'xslt').length;
+    const derivedShapes      = processors.length || art.shapes_count || 0;
+    const derivedConnectors  = Math.max(connTypes.length, recvCfgs.length) || art.connectors_count || 0;
+    const derivedMaps        = xsltProcessors + xslts.length || art.maps_count || 0;
+    const derivedScripting   = scripts.length > 0 || art.has_scripting || false;
+    const derivedDeps        = errorHandlers.length || art.dependencies_count || 0;
+
+    // Derive complexity score from real data (0–100)
+    const derivedComplexity  = Math.min(100, Math.round(
+      (derivedShapes * 4) +
+      (derivedConnectors * 8) +
+      (derivedMaps * 6) +
+      (scripts.length * 10) +
+      (errorHandlers.length * 5)
+    ));
+    const derivedLevel = derivedComplexity >= 70 ? 'High' :
+                         derivedComplexity >= 40 ? 'Medium' : 'Low';
+    const derivedTshirt = derivedComplexity >= 70 ? 'XL' :
+                          derivedComplexity >= 40 ? 'L' :
+                          derivedComplexity >= 20 ? 'M' : 'S';
+    const derivedEffort = derivedComplexity >= 70 ? 10 :
+                          derivedComplexity >= 40 ? 5 :
+                          derivedComplexity >= 20 ? 3 : 1;
+
+    // Error handling pattern from platformData
+    const errorPattern = errorHandlers.length > 0
+      ? (errorHandlers.some(e => e.type === 'catchAll') ? 'Catch-All + Specific Faults' : 'Specific Fault Handlers')
+      : (art.error_handling || null);
+
+    await pool.query(
+      `UPDATE artifacts SET
+        shapes_count=$1, connectors_count=$2, maps_count=$3,
+        has_scripting=$4, primary_connector=$5,
+        complexity_score=$6, complexity_level=$7, tshirt_size=$8, effort_days=$9,
+        dependencies_count=$10, error_handling=$11,
+        updated_at=NOW() WHERE id=$12`,
+      [derivedShapes, derivedConnectors, derivedMaps, derivedScripting,
+       connTypes[0] || art.primary_connector || 'HTTP',
+       derivedComplexity, derivedLevel, derivedTshirt, derivedEffort,
+       derivedDeps, errorPattern, id]
+    );
+    // Reflect in local art object so assessment uses the real numbers
+    art.shapes_count      = derivedShapes;
+    art.connectors_count  = derivedConnectors;
+    art.maps_count        = derivedMaps;
+    art.has_scripting     = derivedScripting;
+    art.primary_connector = connTypes[0] || art.primary_connector || 'HTTP';
+    art.complexity_score  = derivedComplexity;
+    art.complexity_level  = derivedLevel;
+    art.tshirt_size       = derivedTshirt;
+    art.effort_days       = derivedEffort;
+    art.dependencies_count = derivedDeps;
+    art.error_handling    = errorPattern;
 
     // Run rich assessment engine
     const assessment = runAssessment(art, platformData);
