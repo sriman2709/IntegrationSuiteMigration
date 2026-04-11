@@ -40,18 +40,61 @@ function analyseFlowDoc(doc, artifact) {
   const flowEl = doc['flow'] || doc['batch:job'] || doc['batch-job'];
   const muleEl = doc['mule'];
 
-  // Get the flow element
+  // Build a map: connectorName (from 'name' attr) → connector type
+  // and a map: flowName → flow element (for flow-ref resolution)
+  const globalConnectorMap = {};   // e.g. { 'Gmail': 'SMTP', 'HTTP_Listener_Configuration': 'HTTP' }
+  const siblingFlowMap     = {};   // e.g. { 'outboundFlow': <flowEl> }
+
   let flow = null;
   if (flowEl) {
     flow = Array.isArray(flowEl) ? flowEl[0] : flowEl;
   } else if (muleEl) {
-    // raw_xml is the whole file — find flow by name
     const root = Array.isArray(muleEl) ? muleEl[0] : muleEl;
+
+    // ── Collect global connector configs from mule root ───────────────────────
+    // After stripPrefix: smtp:gmail-connector → 'gmail-connector'
+    //                    http:listener-config  → 'listener-config'
+    //                    jms:activemq-connector → 'activemq-connector'
+    for (const [k, els] of Object.entries(root)) {
+      if (k === '$') continue;
+      const kl = k.toLowerCase();
+      const cfgType =
+        (kl.includes('gmail') || kl.includes('smtp'))                         ? 'SMTP'       :
+        (kl.includes('listener-config') || kl === 'http:connector')           ? 'HTTP'       :
+        (kl.includes('jms') || kl.includes('activemq') || kl.includes('ems')) ? 'JMS'        :
+        (kl.includes('sftp') && !kl.includes('inbound'))                      ? 'SFTP'       :
+        (kl.includes('sfdc') || kl.includes('salesforce'))                    ? 'Salesforce' :
+        (kl.includes('sap'))                                                   ? 'SAP'        :
+        (kl.includes('jdbc') || kl.includes('db:generic'))                    ? 'JDBC'       :
+        (kl.includes('cxf') || kl.includes('ws-consumer'))                    ? 'SOAP'       :
+        (kl.includes('mongodb'))                                               ? 'MongoDB'    : null;
+      if (cfgType) {
+        const arr = Array.isArray(els) ? els : [els];
+        for (const el of arr) {
+          const attrs = (el && el['$']) ? el['$'] : {};
+          const name  = attrs.name || attrs['doc:name'];
+          if (name) globalConnectorMap[name] = cfgType;
+        }
+      }
+    }
+
+    // ── Collect all flows into a map for flow-ref resolution ─────────────────
     const flows = root['flow'] || [];
-    flow = flows.find(f => {
-      const attrs = f['$'] || {};
-      return attrs.name === artifact.name;
-    }) || flows[0];
+    for (const f of (Array.isArray(flows) ? flows : [flows])) {
+      const attrs = (f && f['$']) ? f['$'] : {};
+      if (attrs.name) siblingFlowMap[attrs.name] = f;
+    }
+    // Also sub-flows
+    const subFlows = root['sub-flow'] || [];
+    for (const f of (Array.isArray(subFlows) ? subFlows : [subFlows])) {
+      const attrs = (f && f['$']) ? f['$'] : {};
+      if (attrs.name) siblingFlowMap[attrs.name] = f;
+    }
+
+    // Find the primary flow for this artifact
+    flow = siblingFlowMap[artifact.name] ||
+           flows.find(f => { const a = f['$'] || {}; return a.name === artifact.name; }) ||
+           (Array.isArray(flows) ? flows[0] : flows);
   }
 
   if (!flow) return buildFallbackPlatformData(artifact);
@@ -67,12 +110,20 @@ function analyseFlowDoc(doc, artifact) {
     senderConfig:      null,
     receiverConfigs:   [],
     conversionNotes:   [],
-    completenessScore: 100
+    completenessScore: 100,
+    _globalConnectorMap: globalConnectorMap,
+    _siblingFlowMap:     siblingFlowMap,
+    _walkedFlows:        new Set()   // prevent infinite loops on circular flow-refs
   };
 
   walkFlowElement(flow, result, artifact);
   deriveAdapterList(result, artifact);
   calculateCompleteness(result);
+
+  // Clean up internal tracking fields
+  delete result._globalConnectorMap;
+  delete result._siblingFlowMap;
+  delete result._walkedFlows;
 
   return result;
 }
@@ -135,7 +186,7 @@ function walkFlowElement(node, result, artifact) {
 
     // ── Outbound connector detection ─────────────────────────────────────────
 
-    if (k.includes('http:request') || k.includes('http:outbound')) {
+    if (k.includes('http:request') || k.includes('http:outbound') || k === 'request') {
       for (const el of els) {
         const attrs  = (el && el['$']) ? el['$'] : {};
         const path   = attrs.path || '/';
@@ -322,9 +373,43 @@ function walkFlowElement(node, result, artifact) {
 
     if (k === 'flow-ref') {
       for (const el of els) {
-        const attrs = (el && el['$']) ? el['$'] : {};
-        const name  = attrs.name || '{{SUB_FLOW}}';
+        const attrs      = (el && el['$']) ? el['$'] : {};
+        const name       = attrs.name || '{{SUB_FLOW}}';
         result.processors.push({ type: 'flow-ref', label: `Call: ${name}`, config: { flowName: name } });
+        // Walk referenced flow to capture its connectors (avoid infinite loops)
+        if (name && result._siblingFlowMap && result._siblingFlowMap[name] && !result._walkedFlows.has(name)) {
+          result._walkedFlows.add(name);
+          walkFlowElement(result._siblingFlowMap[name], result, artifact);
+        }
+      }
+    }
+
+    // ── Generic outbound-endpoint (prefix stripped by xml2js — e.g. smtp:, jms:, file:) ──
+    if (k === 'outbound-endpoint') {
+      for (const el of els) {
+        const attrs      = (el && el['$']) ? el['$'] : {};
+        const connRef    = attrs['connector-ref'] || attrs.connectorRef || '';
+        const host       = attrs.host || '';
+        const queue      = attrs.queue || attrs.destination || '';
+        // Resolve type from global connector map → connector-ref attr → element signals
+        let connType =
+          (result._globalConnectorMap && result._globalConnectorMap[connRef]) ||
+          (connRef.toLowerCase().includes('gmail') || connRef.toLowerCase().includes('smtp') ? 'SMTP' : null) ||
+          (connRef.toLowerCase().includes('jms') || connRef.toLowerCase().includes('activemq') ? 'JMS' : null) ||
+          (queue ? 'JMS' : null) ||
+          (host && !queue ? 'SMTP' : null) ||
+          'Generic';
+        const cfg = { type: connType, connectorRef: connRef, host, queue };
+        result.receiverConfigs.push(cfg);
+        result.processors.push({ type: 'outbound-endpoint', label: `${connType} Outbound: ${connRef || queue || host || 'endpoint'}`, config: cfg });
+        if (!result.connectorTypes.includes(connType)) result.connectorTypes.push(connType);
+        // Add SMTP-specific note
+        if (connType === 'SMTP') {
+          result.conversionNotes.push({
+            type: 'CONNECTOR_MAPPED', element: 'smtp:outbound-endpoint', severity: 'info',
+            suggestion: 'SMTP → SAP IS Mail Receiver Adapter. Configure SMTP host, port, credentials in IS channel.'
+          });
+        }
       }
     }
 
