@@ -17,7 +17,7 @@ At the start of every Claude session in this project:
 | Repo | github.com/sriman2709/IntegrationSuiteMigration |
 | Branch | main (CI/CD auto-deploys on push) |
 | Login password | ISMigr8@SLB#Demo2025! |
-| Current sprint | **S3 — MuleSoft Connector Mapping** |
+| Current sprint | **S5 — MuleSoft Transformation** |
 
 ## What's already built (pre-sprint)
 - Full assessment tool: upload ZIP/JAR/XML, parse, artifact cards, complexity scoring
@@ -32,6 +32,8 @@ At the start of every Claude session in this project:
 - **S0** ✅ — knowledge_base table + MCP server (mcp/knowledge-server.js) + 28 seeded knowledge entries
 - **S1** ✅ — raw_xml column + conversion_status/iflow_xml/conversion_notes in artifacts; all parsers store source XML
 - **S2** ✅ (existed) — engine/iflow.js package generator
+- **S3** ✅ — MuleSoft connector extraction from raw_xml; all adapters mapped; services/iflow-generator-mulesoft.js
+- **S4** ✅ — engine/iflow-mulesoft-bpmn.js (real BPMN2 step builder); wired into buildFullBPMN() in iflow.js via pd.processors detection
 
 ## Sample files (for testing — on OneDrive)
 - MuleSoft: `OneDrive/projects/anypoint-examples-3.8.zip`

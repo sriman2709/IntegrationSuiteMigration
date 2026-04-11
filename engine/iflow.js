@@ -14,6 +14,7 @@
  */
 
 const AdmZip = require('adm-zip');
+const { buildMuleSoftBPMN } = require('./iflow-mulesoft-bpmn');
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 
@@ -415,6 +416,15 @@ function enrichConversionXML(xml, iflowId, iflowName, artifact) {
 }
 
 function buildFullBPMN(artifact, pd, iflowId, iflowName, platform, trigType, hasMaps, hasScripts, hasErrors, connTypes) {
+  // ── MuleSoft: use real BPMN builder when processors were extracted ────────
+  if (platform === 'mulesoft' && pd.processors && pd.processors.length > 0) {
+    const senderAdapterName  = pd.senderConfig  ? _adapterLabel(pd.senderConfig.type,  'sender')  : 'HTTP Sender Adapter';
+    const receiverAdapterName = pd.receiverConfigs && pd.receiverConfigs[0]
+      ? _adapterLabel(pd.receiverConfigs[0].type, 'receiver')
+      : 'HTTP Receiver Adapter';
+    return buildMuleSoftBPMN(artifact, pd, iflowId, iflowName, senderAdapterName, receiverAdapterName);
+  }
+
   const senderAdapter  = mapSenderAdapter(trigType, platform, connTypes);
   const receiverAdapter = mapReceiverAdapter(artifact, platform, connTypes);
   const domain = artifact.domain || 'INT';
@@ -640,6 +650,21 @@ function buildExceptionSubprocess(artifact, iflowId) {
 }
 
 // ── Adapter Builders ──────────────────────────────────────────────────────────
+
+// Maps a connector type string (from iflow-generator-mulesoft) to a human label
+function _adapterLabel(type, direction) {
+  if (!type) return direction === 'sender' ? 'HTTP Sender Adapter' : 'HTTP Receiver Adapter';
+  const t = type.toLowerCase();
+  if (t.includes('http') || t.includes('apikit') || t.includes('listener')) return direction === 'sender' ? 'HTTP Sender Adapter' : 'HTTP Receiver Adapter';
+  if (t.includes('jms') || t.includes('amqp')) return direction === 'sender' ? 'JMS Sender Adapter' : 'JMS Receiver Adapter';
+  if (t.includes('sftp') || t.includes('ftp') || t.includes('file')) return direction === 'sender' ? 'SFTP Sender Adapter' : 'SFTP Receiver Adapter';
+  if (t.includes('salesforce')) return 'Salesforce Adapter';
+  if (t.includes('sap') || t.includes('bapi') || t.includes('rfc')) return 'RFC Adapter';
+  if (t.includes('jdbc') || t.includes('db')) return 'JDBC Adapter';
+  if (t.includes('smtp') || t.includes('mail')) return 'Mail Receiver Adapter';
+  if (t.includes('soap') || t.includes('wsdl')) return 'SOAP Adapter';
+  return direction === 'sender' ? 'HTTP Sender Adapter' : 'HTTP Receiver Adapter';
+}
 
 function mapSenderAdapter(trigType, platform, connTypes) {
   if (trigType === 'Schedule') return { adapterType: 'Timer', component: 'timer' };
