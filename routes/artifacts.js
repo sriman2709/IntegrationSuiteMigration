@@ -15,13 +15,18 @@ const { runDeploy } = require('../engine/deploy');
 const { runValidate } = require('../engine/validate');
 const { generateIFlowPackage } = require('../engine/iflow');
 const { extractMuleSoftPlatformData, buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
+const { extractBw6PlatformData } = require('../services/iflow-generator-tibco-bw6');
 
 // ── Resolve real platform data: prefer raw_xml extraction over mock connector ─
 async function resolvePlatformData(art) {
   if (art.raw_xml && art.platform === 'mulesoft') {
     const real = await extractMuleSoftPlatformData(art);
-    // Tag source so UI can show "Real" badge
     real._source = real._source || 'raw_xml';
+    return real;
+  }
+  if (art.raw_xml && art.platform === 'tibco-bw6') {
+    const real = await extractBw6PlatformData(art);
+    real._source = real._source || 'raw_xml_bw6';
     return real;
   }
   const connector = getConnector(art.platform || art.project_platform);

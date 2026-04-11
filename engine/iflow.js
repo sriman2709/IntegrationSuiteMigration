@@ -15,6 +15,7 @@
 
 const AdmZip = require('adm-zip');
 const { buildMuleSoftBPMN } = require('./iflow-mulesoft-bpmn');
+const { buildBw6BPMN } = require('./iflow-tibco-bw6-bpmn');
 const { buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
 
 // ── Main entry ────────────────────────────────────────────────────────────────
@@ -51,6 +52,11 @@ function generateIFlowPackage(artifact, platformData, conversionOutput) {
     const dwScripts = buildMuleSoftGroovyScripts(artifact, platformData);
     dwScripts.forEach(s => {
       zip.addFile(`src/main/resources/script/${s.filename}`, Buffer.from(s.content));
+    });
+  } else if (platform === 'tibco-bw6' && platformData.xsltTransforms && platformData.xsltTransforms.length > 0) {
+    // BW6: emit extracted XSLT 1.0 files — SAP IS supports natively, no translation needed
+    platformData.xsltTransforms.forEach(xsl => {
+      zip.addFile(`src/main/resources/mapping/${xsl.filename}`, Buffer.from(xsl.content));
     });
   } else if (artifact.has_scripting) {
     const scripts = buildGroovyScripts(artifact, platformData);
@@ -473,6 +479,15 @@ function buildFullBPMN(artifact, pd, iflowId, iflowName, platform, trigType, has
       ? _adapterLabel(pd.receiverConfigs[0].type, 'receiver')
       : 'HTTP Receiver Adapter';
     return buildMuleSoftBPMN(artifact, pd, iflowId, iflowName, senderAdapterName, receiverAdapterName);
+  }
+
+  // ── TIBCO BW6: use real BW6 BPMN builder when processors were extracted ──
+  if (platform === 'tibco-bw6' && pd.processors && pd.processors.length > 0) {
+    const senderAdapterName  = pd.senderConfig  ? _adapterLabel(pd.senderConfig.type,  'sender')  : 'HTTP Sender Adapter';
+    const receiverAdapterName = pd.receiverConfigs && pd.receiverConfigs[0]
+      ? _adapterLabel(pd.receiverConfigs[0].type, 'receiver')
+      : 'HTTP Receiver Adapter';
+    return buildBw6BPMN(artifact, pd, iflowId, iflowName, senderAdapterName, receiverAdapterName);
   }
 
   const senderAdapter  = mapSenderAdapter(trigType, platform, connTypes);
