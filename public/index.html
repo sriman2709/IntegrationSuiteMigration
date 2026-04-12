@@ -450,7 +450,10 @@ select.form-control{cursor:pointer;}
           <div class="page-subtitle" id="artifact-list-sub">All integration processes</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-secondary btn-sm" onclick="runReanalysis()">Re-analyze All</button>
+          <button class="btn btn-secondary btn-sm" id="btn-bulk-assess" onclick="runBulkAssess()">
+            <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg>
+            Assess All
+          </button>
           <button class="btn btn-accent btn-sm" onclick="downloadAllIFlows()" id="btn-download-all-iflows" title="Download all iFlow packages as SAP IS Content Package ZIP">
             <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Download All iFlows
@@ -2506,14 +2509,36 @@ async function downloadReport() {
   }
 }
 
-async function runReanalysis() {
-  if (!state.currentProjectId) return;
+async function runBulkAssess() {
+  if (!state.currentProjectId) { toast('No project selected', 'warning'); return; }
+  const btn = document.getElementById('btn-bulk-assess');
+  const total = document.querySelectorAll('#artifact-table tbody tr').length || '?';
+
+  // Disable button + show spinner
+  btn.disabled = true;
+  btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:spin 1s linear infinite"><path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" opacity=".25"/><path d="M21 12a9 9 0 00-9-9"/></svg> Assessing ${total} artifacts…`;
+  toast(`Running full assessment on all artifacts. This may take ${Math.ceil(total / 4)} seconds…`, 'info');
+
   try {
-    const result = await api(`/api/analysis/project/${state.currentProjectId}/run`, 'POST');
-    toast(`Re-analyzed ${result.artifacts_reanalyzed} artifacts`, 'success');
+    const body = { projectId: state.currentProjectId };
+    if (state.currentSourceId) body.sourceId = state.currentSourceId;
+
+    const result = await api('/api/artifacts/bulk-assess', 'POST', body);
+
+    const failed = result.results.filter(r => r.status === 'error');
+    if (failed.length) {
+      toast(`Assessed ${result.passed}/${result.total} ✅  — ${result.failed} failed: ${failed.map(f => f.name).join(', ')}`, 'warning');
+    } else {
+      toast(`All ${result.passed} artifacts assessed successfully ✅`, 'success');
+    }
+    // Reload artifact list with fresh data
     await loadArtifacts(state.currentProjectId, state.currentSourceId);
+    loadAllData().catch(() => {});
   } catch (err) {
-    toast('Re-analysis failed: ' + err.message, 'error');
+    toast('Bulk assess failed: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/></svg> Assess All`;
   }
 }
 

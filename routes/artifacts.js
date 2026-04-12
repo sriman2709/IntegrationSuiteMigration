@@ -136,6 +136,108 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// ── BULK ASSESS — all artifacts for a project or source ──────────────────────
+// POST /api/artifacts/bulk-assess  body: { projectId, sourceId (optional) }
+// Runs the full assessment engine (raw_xml extraction) on every matching artifact.
+// Returns a summary: { total, passed, failed, results[] }
+router.post('/bulk-assess', async (req, res) => {
+  const { projectId, sourceId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId required' });
+
+  try {
+    let query = 'SELECT a.*, p.platform AS project_platform FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id WHERE a.project_id = $1';
+    const params = [projectId];
+    if (sourceId) { query += ' AND a.source_id = $2'; params.push(sourceId); }
+    query += ' ORDER BY a.name';
+
+    const { rows: artifacts } = await pool.query(query, params);
+    const results = [];
+
+    for (const art of artifacts) {
+      try {
+        const platformData = await resolvePlatformData(art);
+
+        const processors    = platformData.processors  || platformData.activities || platformData.shapes || [];
+        const xslts         = platformData.xsltTransforms || [];
+        const scripts       = platformData.javaScripts || platformData.scripts || [];
+        const connTypes     = platformData.connectorTypes || [];
+        const recvCfgs      = platformData.receiverConfigs || [];
+        const errorHandlers = platformData.errorHandlers || [];
+        const mappers       = platformData.mappers || [];
+
+        const xsltProcessors    = processors.filter(p => p.type === 'xslt').length;
+        const derivedShapes      = processors.length || art.shapes_count || 0;
+        const derivedConnectors  = Math.max(connTypes.length, recvCfgs.length) || art.connectors_count || 0;
+        const derivedMaps        = xsltProcessors + xslts.length + mappers.length || art.maps_count || 0;
+        const derivedScripting   = scripts.length > 0 || art.has_scripting || false;
+        const derivedDeps        = errorHandlers.length || art.dependencies_count || 0;
+
+        const derivedComplexity  = Math.min(100, Math.round(
+          (derivedShapes * 4) + (derivedConnectors * 8) + (derivedMaps * 6) +
+          (scripts.length * 10) + (errorHandlers.length * 5)
+        ));
+        const derivedLevel   = derivedComplexity >= 70 ? 'High'   : derivedComplexity >= 40 ? 'Medium' : 'Low';
+        const derivedTshirt  = derivedComplexity >= 70 ? 'XL'     : derivedComplexity >= 40 ? 'L' : derivedComplexity >= 20 ? 'M' : 'S';
+        const derivedEffort  = derivedComplexity >= 70 ? 10       : derivedComplexity >= 40 ? 5  : derivedComplexity >= 20 ? 3  : 1;
+        const errorPattern   = errorHandlers.length > 0
+          ? (errorHandlers.some(e => e.type === 'catchAll') ? 'Catch-All + Specific Faults' : 'Specific Fault Handlers')
+          : (art.error_handling || null);
+
+        await pool.query(
+          `UPDATE artifacts SET shapes_count=$1, connectors_count=$2, maps_count=$3,
+            has_scripting=$4, primary_connector=$5, complexity_score=$6, complexity_level=$7,
+            tshirt_size=$8, effort_days=$9, dependencies_count=$10, error_handling=$11,
+            updated_at=NOW() WHERE id=$12`,
+          [derivedShapes, derivedConnectors, derivedMaps, derivedScripting,
+           connTypes[0] || art.primary_connector || 'HTTP',
+           derivedComplexity, derivedLevel, derivedTshirt, derivedEffort,
+           derivedDeps, errorPattern, art.id]
+        );
+
+        art.shapes_count = derivedShapes; art.connectors_count = derivedConnectors;
+        art.maps_count = derivedMaps; art.has_scripting = derivedScripting;
+        art.primary_connector = connTypes[0] || art.primary_connector || 'HTTP';
+        art.complexity_score = derivedComplexity; art.complexity_level = derivedLevel;
+        art.tshirt_size = derivedTshirt; art.effort_days = derivedEffort;
+        art.dependencies_count = derivedDeps; art.error_handling = errorPattern;
+
+        const assessment = runAssessment(art, platformData);
+
+        const existing = await pool.query('SELECT id FROM artifact_assessments WHERE artifact_id = $1', [art.id]);
+        if (existing.rows.length) {
+          await pool.query(
+            `UPDATE artifact_assessments SET findings=$1, recommendations=$2, iflow_name=$3,
+              iflow_package=$4, migration_approach=$5, identified_challenges=$6, updated_at=NOW()
+             WHERE artifact_id=$7`,
+            [JSON.stringify(assessment.findings), JSON.stringify(assessment.recommendations),
+             assessment.iflow_name, assessment.iflow_package, assessment.migration_approach,
+             JSON.stringify(assessment.identified_challenges || []), art.id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO artifact_assessments (artifact_id, findings, recommendations, iflow_name, iflow_package, migration_approach, identified_challenges)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [art.id, JSON.stringify(assessment.findings), JSON.stringify(assessment.recommendations),
+             assessment.iflow_name, assessment.iflow_package, assessment.migration_approach,
+             JSON.stringify(assessment.identified_challenges || [])]
+          );
+        }
+        await pool.query("UPDATE artifacts SET status='assessed', updated_at=NOW() WHERE id=$1", [art.id]);
+        results.push({ id: art.id, name: art.name, status: 'ok', complexity: derivedComplexity, level: derivedLevel });
+      } catch (err) {
+        results.push({ id: art.id, name: art.name, status: 'error', error: err.message });
+      }
+    }
+
+    const passed = results.filter(r => r.status === 'ok').length;
+    const failed = results.filter(r => r.status === 'error').length;
+    res.json({ total: results.length, passed, failed, results });
+  } catch (err) {
+    console.error('Bulk assess error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── ASSESS ───────────────────────────────────────────────────────────────────
 router.post('/:id/assess', async (req, res) => {
   const { id } = req.params;
