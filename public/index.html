@@ -1149,15 +1149,18 @@ function showPage(page) {
 
 function updateBreadcrumb(parts) {
   const bc = document.getElementById('breadcrumb');
-  if (parts.length === 1) {
-    bc.innerHTML = `<span class="current">${parts[0]}</span>`;
-  } else {
-    bc.innerHTML = parts.map((p, i) =>
-      i < parts.length - 1
-        ? `<span class="crumb">${p}</span><span class="sep">/</span>`
-        : `<span class="current">${p}</span>`
-    ).join('');
-  }
+  bc.innerHTML = parts.map((p, i) => {
+    const label = typeof p === 'object' ? p.label : p;
+    const fn    = typeof p === 'object' ? p.fn : null;
+    if (i === parts.length - 1) {
+      return `<span class="current">${esc(label)}</span>`;
+    }
+    const sep = `<span class="sep">/</span>`;
+    if (fn) {
+      return `<span class="crumb" onclick="${fn}">${esc(label)}</span>${sep}`;
+    }
+    return `<span class="crumb">${esc(label)}</span>${sep}`;
+  }).join('');
 }
 
 function goBackToAssets() {
@@ -1398,7 +1401,7 @@ async function openSourceArtifacts(sourceId, sourceName, platform) {
   document.getElementById('artifact-list-title').textContent = esc(sourceName || 'Artifacts');
   document.getElementById('artifact-list-sub').textContent = `${platformLabel(platform)} — All integration processes`;
   document.getElementById('nav-assets').classList.add('active');
-  updateBreadcrumb(['Assets', sourceName || 'Artifacts']);
+  updateBreadcrumb([{label:'Assets', fn:'goBackToAssets()'}, sourceName || 'Artifacts']);
   await loadArtifacts(state.currentProjectId, sourceId);
 }
 
@@ -1544,7 +1547,7 @@ async function openArtifactDetail(artifactId) {
     document.getElementById('detail-score').textContent = data.complexity_score || 0;
     document.getElementById('detail-effort').textContent = data.effort_days || 0;
 
-    updateBreadcrumb(['Assets', data.source_name || 'Source', data.name]);
+    updateBreadcrumb([{label:'Assets', fn:'goBackToAssets()'}, {label: data.source_name || 'Source', fn:'goBackToArtifactList()'}, data.name]);
 
     // Source tab
     document.getElementById('source-process-table').innerHTML = `
