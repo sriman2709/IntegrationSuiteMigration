@@ -99,6 +99,89 @@ router.get('/project/:projectId/stats', async (req, res) => {
   }
 });
 
+// ── EXPORT ALL ASSESSMENTS as ZIP of TXT files ────────────────────────────────
+// GET /api/artifacts/export-assessments?projectId=X&sourceId=Y (optional)
+// Must be before /:id route or Express will match /:id first
+router.get('/export-assessments', async (req, res) => {
+  const { projectId, sourceId } = req.query;
+  if (!projectId) return res.status(400).json({ error: 'projectId is required' });
+
+  try {
+    let q = `
+      SELECT a.id, a.name, a.platform, a.artifact_type, a.complexity_score, a.complexity_level,
+             a.tshirt_size, a.effort_days, a.readiness, a.primary_connector,
+             a.steps_count, a.adapters_count, a.maps_count, a.dependencies_count,
+             a.key_steps, a.trigger_type, a.domain, a.folder_path,
+             aa.findings, aa.recommendations, aa.iflow_name, aa.iflow_package,
+             aa.migration_approach, aa.identified_challenges
+      FROM artifacts a
+      LEFT JOIN artifact_assessments aa ON aa.artifact_id = a.id
+      WHERE a.project_id = $1`;
+    const params = [projectId];
+    if (sourceId) { q += ` AND a.source_id = $2`; params.push(sourceId); }
+    q += ' ORDER BY a.name';
+
+    const { rows } = await pool.query(q, params);
+    if (!rows.length) return res.status(404).json({ error: 'No artifacts found' });
+
+    const archiver = require('archiver');
+    const archive = archiver('zip', { zlib: { level: 6 } });
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="AssessmentReports_${Date.now()}.zip"`);
+    archive.pipe(res);
+
+    for (const row of rows) {
+      const a = row;
+      let text = `INTEGRATION SUITE MIGRATION ASSESSMENT REPORT\nSierra Digital Consulting\n${'='.repeat(60)}\n\n`;
+      text += `Artifact: ${a.name}\n`;
+      text += `Platform: ${(a.platform || '').toUpperCase()}\n`;
+      text += `Complexity: ${a.complexity_level || 'Low'} (${a.complexity_score || 0}/100)\n`;
+      text += `T-Shirt: ${a.tshirt_size || 'S'} | Effort: ${a.effort_days || 1} days\n`;
+      text += `Readiness: ${a.readiness || 'Manual'}\n`;
+      text += `iFlow Target: ${a.iflow_name || '—'}\n`;
+      text += `Package: ${a.iflow_package || '—'}\n\n`;
+
+      text += `FINDINGS\n${'─'.repeat(40)}\n`;
+      const findings = Array.isArray(a.findings) ? a.findings
+        : (typeof a.findings === 'string' ? JSON.parse(a.findings || '[]') : []);
+      for (const s of findings) {
+        text += `\n${s.section}:\n`;
+        for (const item of (s.items || [])) text += `  • ${item}\n`;
+      }
+
+      text += `\nRECOMMENDATIONS\n${'─'.repeat(40)}\n`;
+      const recs = Array.isArray(a.recommendations) ? a.recommendations
+        : (typeof a.recommendations === 'string' ? JSON.parse(a.recommendations || '[]') : []);
+      for (const s of recs) {
+        text += `\n${s.section}:\n`;
+        for (const item of (s.items || [])) text += `  • ${item}\n`;
+      }
+
+      const challenges = Array.isArray(a.identified_challenges) ? a.identified_challenges
+        : (typeof a.identified_challenges === 'string' ? JSON.parse(a.identified_challenges || '[]') : []);
+      if (challenges.length) {
+        text += `\nIDENTIFIED CHALLENGES\n${'─'.repeat(40)}\n`;
+        for (const c of challenges) {
+          if (typeof c === 'object') {
+            text += `  ⚠ ${c.challenge || ''}${c.description ? ': ' + c.description : ''}\n`;
+            if (c.mitigation) text += `    → Mitigation: ${c.mitigation}\n`;
+          } else {
+            text += `  ⚠ ${c}\n`;
+          }
+        }
+      }
+
+      archive.append(Buffer.from(text, 'utf8'), { name: `${a.name}_Assessment.txt` });
+    }
+
+    await archive.finalize();
+  } catch (err) {
+    console.error('Export assessments error:', err);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Get single artifact with assessment + runs ────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
