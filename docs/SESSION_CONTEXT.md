@@ -21,28 +21,29 @@
 See `docs/SPRINT_PLAN.md` for full definition.
 
 ## Last Action (update this every session end)
-> 2026-04-12: S13 in progress. S12 audit (24 iFlow ZIPs expanded) revealed 3 critical bugs —
-> all fixed and pushed in commit 31321a0:
+> 2026-04-12: S13 — round-2 fixes pushed in commit 730dc6f.
 >
-> Bug 1 — Sequence flow ID mismatch (engine/iflow-mulesoft-bpmn.js):
->   Step XML used SEQ_TO_{id} in bpmn2:incoming but buildSequenceFlowsFromSteps emitted
->   SEQ_From_{prev} — SAP IS import would reject/warn. Fixed by post-processing step XML
->   after the steps array is built: replaces placeholder SEQ_TO_{id} with the real
->   SEQ_Start_To_{first} or SEQ_FROM_{prev} flow ID. Also removed misleading comment
->   <!-- link: SEQ_TO_{id} --> that was not a real sequenceFlow element.
+> Bug 3 (root-cause) — engine/iflow.js buildIFlowXML:
+>   enrichConversionXML short-circuited the real builders because conv.iflow_xml always
+>   contained 'bpmn2:definitions' (Sprint 1 generic XML). Added hasRealBuilder check:
+>   MuleSoft (processors > 0), BW5 (always), BW6 (always) — all bypass the cache.
+>   buildFullBPMN: removed processors.length > 0 guard for BW5/BW6 routes so dedicated
+>   builders are called even when extractor returns empty processor arrays.
 >
-> Bug 2 — Missing Groovy script files (engine/iflow.js):
->   buildMuleSoftGroovyScripts checked proc.type === 'dataweave' but MuleSoft processors
->   carry type 'transform-message'/'ee:transform'. Rewrote the function to mirror the exact
->   same transform-detection and name-resolution logic as buildStepsFromProcessors so the
->   generated .groovy filenames align with ref:${name}.groovy in BPMN.
+> Bug 1 carry-over — BW5 & BW6 dedicated builders:
+>   Same incoming ID mismatch as MuleSoft Bug 1: steps used SEQ_TO_* placeholders but
+>   buildSequenceFlowsFromSteps emitted SEQ_Start_To_* / SEQ_FROM_*. Added identical
+>   post-processing loop to buildBw5BPMN and buildBw6BPMN (Router-aware for BW6).
 >
-> Bug 3 — Receiver adapter hardcoded as 'http' (engine/iflow-mulesoft-bpmn.js):
->   Added deriveReceiverAdapterType() that resolves jdbc/salesforce/jms/sftp/rfc/soap from
->   pd.connectorTypes and artifact.primary_connector. Both receiver builder functions now use
->   it as fallback when pd.receiverConfigs is absent (which it is for all 24 artifacts).
+> MuleSoft gap — iflow-mulesoft-bpmn.js:
+>   Added missing 'mail' case to !rc branch of buildReceiverChannelFromConfig.
 >
-> NEXT: Re-run Convert All → Download All iFlows → verify new ZIPs in Designer
+> Fixes in 31321a0 (still valid):
+>   Bug 1 MuleSoft: post-processing loop patching incoming IDs — ✅ verified 15/15
+>   Bug 2 Groovy: buildMuleSoftGroovyScripts now mirrors buildStepsFromProcessors — ✅ 24/24
+>   Bug 3 initial: deriveReceiverAdapterType() added to mulesoft receiver builders
+>
+> NEXT: Re-run Convert All → Download All iFlows → re-audit fresh ZIPs
 
 ## What's Built and Working
 - Upload ZIP → parse → artifact cards (MuleSoft, BW5, BW6, Boomi)
