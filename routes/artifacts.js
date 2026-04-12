@@ -124,12 +124,9 @@ router.get('/export-assessments', async (req, res) => {
     const { rows } = await pool.query(q, params);
     if (!rows.length) return res.status(404).json({ error: 'No artifacts found' });
 
-    const archiver = require('archiver');
-    const archive = archiver('zip', { zlib: { level: 6 } });
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="AssessmentReports_${Date.now()}.zip"`);
-    archive.pipe(res);
+    // Use adm-zip (already in dependencies) — no archiver needed
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip();
 
     for (const row of rows) {
       const a = row;
@@ -172,10 +169,14 @@ router.get('/export-assessments', async (req, res) => {
         }
       }
 
-      archive.append(Buffer.from(text, 'utf8'), { name: `${a.name}_Assessment.txt` });
+      zip.addFile(`${a.name}_Assessment.txt`, Buffer.from(text, 'utf8'));
     }
 
-    await archive.finalize();
+    const zipBuffer = zip.toBuffer();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="AssessmentReports_${Date.now()}.zip"`);
+    res.setHeader('Content-Length', zipBuffer.length);
+    res.send(zipBuffer);
   } catch (err) {
     console.error('Export assessments error:', err);
     if (!res.headersSent) res.status(500).json({ error: err.message });
