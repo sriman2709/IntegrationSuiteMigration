@@ -17,13 +17,21 @@
 | Mac IP whitelisted | 106.192.76.246 (current network) + 122.167.99.66 (MacBookPro home) for Postgres |
 
 ## Current Sprint
-**S12 — Real Artifact Testing: Assessment Pass** (▶ ACTIVE as of 2026-04-11)
+**S13 — Real Artifact Testing: Convert → Download Pass** (▶ ACTIVE as of 2026-04-12)
 See `docs/SPRINT_PLAN.md` for full definition.
 
 ## Last Action (update this every session end)
-> 2026-04-11: Fixed 6 assessment bugs (challenges, scripting label, MuleSoft connectors=0,
-> flow-ref recursion, DataWeave mapping undefined, TIBCO platform normalisation).
-> Pushed 3 commits. Revised sprint plan written. Ready to start S12 testing.
+> 2026-04-12: S12 complete. All 24 artifacts assessed. Fixed systemic bugs across 3 sessions:
+> - BW5 activity type read from child element (not attr) — e26547a
+> - MuleSoft stripPrefix for db/ws/batch/sfdc/mongodb — 1204945
+> - batch:job root elements not walked (Salesforce_To_MySQL_Batch) — 2b5d50d
+> - batch:input container missing from walk list — 2b5d50d
+> - 4 assessment engine bugs (challenges/scripting/connectors/DataWeave) — e1193f2
+> Added: Bulk Assess (bf66c7c), Export All Assessments (6d7676e)
+> S12 known residual gaps (moved to S14 backlog):
+>   - BW6_Credit_App_Main/Credit_Check_Backend: scope-only (1 step) — BW6 scope walking gap
+>   - CSV_To_MongoDB: MongoDB not in connectorTypes — ambiguous stripped op names
+> Starting S13: Click Convert on each of 24 artifacts; verify ZIP downloads with valid BPMN2.
 
 ## What's Built and Working
 - Upload ZIP → parse → artifact cards (MuleSoft, BW5, BW6, Boomi)

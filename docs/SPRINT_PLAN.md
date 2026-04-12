@@ -52,8 +52,8 @@ Each sprint in Phase 1–2 follows this cycle:
 | S9     | Boomi Enhancement                 | ⏸ DEFERRED        | -     |
 | S10    | Conversion Quality Engine         | ✅ DONE           | -     |
 | S11    | Migration Intelligence Chat       | ✅ DONE           | -     |
-| **S12**| **Real Artifact Testing — Assess**| **▶ CURRENT**     | 1     |
-| S13    | Real Artifact Testing — Convert   | NEXT              | 1     |
+| S12    | Real Artifact Testing — Assess    | ✅ DONE           | 1     |
+| **S13**| **Real Artifact Testing — Convert**| **▶ CURRENT**    | 1     |
 | S14    | MuleSoft Extractor Hardening      | PENDING           | 2     |
 | S15    | TIBCO BW6 Extractor Hardening     | PENDING           | 2     |
 | S16    | TIBCO BW5 Extractor Hardening     | PENDING           | 2     |
@@ -65,7 +65,7 @@ Each sprint in Phase 1–2 follows this cycle:
 
 ---
 
-## SPRINT 12 — Real Artifact Testing: Assessment Pass (CURRENT)
+## SPRINT 12 — Real Artifact Testing: Assessment Pass ✅ DONE (2026-04-12)
 
 **Goal**: Every one of the 24 seeded real artifacts produces a correct, complete Assessment report
 with no `undefined`, `[object Object]`, zero-counts, or missing sections.
@@ -111,7 +111,7 @@ with no `undefined`, `[object Object]`, zero-counts, or missing sections.
 
 ---
 
-## SPRINT 13 — Real Artifact Testing: Convert → Download Pass
+## SPRINT 13 — Real Artifact Testing: Convert → Download Pass (▶ CURRENT)
 
 **Goal**: Every artifact that passes Assessment can also Convert and produce a downloadable,
 structurally valid iFlow ZIP — even if some steps are stubs.
