@@ -14,7 +14,7 @@
 | Node on Azure | v20.20.0 (Linux container) |
 | OpenAI key | set in Azure App Settings as OPENAI_API_KEY |
 | Azure CLI account | s.sundararaman@sierradigitalinc.com |
-| Mac IP whitelisted | 122.167.97.35 (MacBookPro-20260411) for Postgres |
+| Mac IP whitelisted | 122.167.99.66 (MacBookPro-20260411) for Postgres |
 
 ## Current Sprint
 **S12 — Real Artifact Testing: Assessment Pass** (▶ ACTIVE as of 2026-04-11)
