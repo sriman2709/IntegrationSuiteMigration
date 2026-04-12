@@ -37,7 +37,8 @@ async function extractMuleSoftPlatformData(artifact) {
 // ── Analyse the parsed flow XML doc ─────────────────────────────────────────
 function analyseFlowDoc(doc, artifact) {
   // Root may be a <flow> element directly or a <mule> root
-  const flowEl = doc['flow'] || doc['batch:job'] || doc['batch-job'];
+  // batch:job → 'job' after stripPrefix; also try original forms as fallback
+  const flowEl = doc['flow'] || doc['job'] || doc['batch:job'] || doc['batch-job'];
   const muleEl = doc['mule'];
 
   // Build a map: connectorName (from 'name' attr) → connector type
@@ -55,19 +56,32 @@ function analyseFlowDoc(doc, artifact) {
     // After stripPrefix: smtp:gmail-connector → 'gmail-connector'
     //                    http:listener-config  → 'listener-config'
     //                    jms:activemq-connector → 'activemq-connector'
+    //                    db:mysql-config        → 'mysql-config'
+    //                    db:generic-config      → 'generic-config'
+    //                    ws:consumer-config     → 'consumer-config'
+    //                    mongodb:config         → 'config' (catch-all below)
     for (const [k, els] of Object.entries(root)) {
       if (k === '$') continue;
       const kl = k.toLowerCase();
+      // Also inspect config element body for driver/url clues for generic configs
+      const elArr = Array.isArray(els) ? els : [els];
+      const elBody = JSON.stringify(elArr).toLowerCase();
       const cfgType =
-        (kl.includes('gmail') || kl.includes('smtp'))                         ? 'SMTP'       :
-        (kl.includes('listener-config') || kl === 'http:connector')           ? 'HTTP'       :
-        (kl.includes('jms') || kl.includes('activemq') || kl.includes('ems')) ? 'JMS'        :
-        (kl.includes('sftp') && !kl.includes('inbound'))                      ? 'SFTP'       :
-        (kl.includes('sfdc') || kl.includes('salesforce'))                    ? 'Salesforce' :
-        (kl.includes('sap'))                                                   ? 'SAP'        :
-        (kl.includes('jdbc') || kl.includes('db:generic'))                    ? 'JDBC'       :
-        (kl.includes('cxf') || kl.includes('ws-consumer'))                    ? 'SOAP'       :
-        (kl.includes('mongodb'))                                               ? 'MongoDB'    : null;
+        (kl.includes('gmail') || kl.includes('smtp'))                              ? 'SMTP'       :
+        (kl.includes('listener-config') || kl === 'http:connector')                ? 'HTTP'       :
+        (kl.includes('jms') || kl.includes('activemq') || kl.includes('ems'))      ? 'JMS'        :
+        (kl.includes('sftp') && !kl.includes('inbound'))                           ? 'SFTP'       :
+        (kl.includes('sfdc') || kl.includes('salesforce'))                         ? 'Salesforce' :
+        (kl.includes('sap'))                                                        ? 'SAP'        :
+        // stripPrefix strips db: → 'mysql-config', 'oracle-config', 'generic-config'
+        (kl.includes('jdbc') || kl.includes('mysql-config') ||
+         kl.includes('oracle-config') || kl.includes('mssql-config') ||
+         (kl.includes('generic-config') && elBody.includes('jdbc')))               ? 'JDBC'       :
+        (kl.includes('cxf') || kl.includes('ws-consumer') ||
+         kl.includes('consumer-config'))                                            ? 'SOAP'       :
+        // stripPrefix strips mongodb: → 'config' — catch by doc:name containing 'mongo'
+        (kl.includes('mongodb') || elBody.includes('mongodb') ||
+         elBody.includes('mongo'))                                                  ? 'MongoDB'    : null;
       if (cfgType) {
         const arr = Array.isArray(els) ? els : [els];
         for (const el of arr) {
@@ -198,7 +212,11 @@ function walkFlowElement(node, result, artifact) {
       }
     }
 
-    if (k.includes('db:select') || k.includes('db:insert') || k.includes('db:update') || k.includes('db:delete') || k.includes('db:stored-procedure')) {
+    // db:select/insert/update/delete → after stripPrefix: 'select'/'insert'/'update'/'delete'
+    // Guard with config-ref OR parameterized-query child to avoid matching non-db elements
+    if (k.includes('db:select') || k.includes('db:insert') || k.includes('db:update') || k.includes('db:delete') || k.includes('db:stored-procedure') ||
+        ((k === 'select' || k === 'insert' || k === 'update' || k === 'delete' || k === 'stored-procedure') &&
+         els.some(el => el && (el['$']?.['config-ref'] || el['parameterized-query'] || el['dynamic-query'])))) {
       for (const el of els) {
         const attrs = (el && el['$']) ? el['$'] : {};
         // Extract SQL query
@@ -233,10 +251,14 @@ function walkFlowElement(node, result, artifact) {
       }
     }
 
-    if (k.includes('sfdc:') || k.includes('salesforce:')) {
+    // sfdc:/salesforce: stripped → 'query','upsert','create','update-single','delete','query-single' etc.
+    const SFDC_OPS = new Set(['upsert','query-single','create-single','update-single','delete-bulk',
+                               'find-duplicates','get-deleted','get-updated','retrieve']);
+    if (k.includes('sfdc:') || k.includes('salesforce:') || SFDC_OPS.has(k) ||
+        (k === 'upsert' && els.some(el => el?.['$']?.['config-ref']?.toLowerCase().includes('salesforce')))) {
       for (const el of els) {
         const attrs     = (el && el['$']) ? el['$'] : {};
-        const operation = k.split(':')[1] || 'query';
+        const operation = k.includes(':') ? k.split(':')[1] : k;
         const sobject   = attrs.type || attrs.sObjectType || attrs.objectType || '{{SF_OBJECT}}';
         const cfg       = { type: 'Salesforce', operation, sobject, configRef: attrs['config-ref'] || '' };
         result.receiverConfigs.push(cfg);
@@ -267,30 +289,40 @@ function walkFlowElement(node, result, artifact) {
       }
     }
 
-    if (k.includes('cxf:') || k.includes('web-service-consumer')) {
+    // ws:consumer → after stripPrefix: 'consumer'. cxf: also stripped similarly.
+    if (k.includes('cxf:') || k.includes('web-service-consumer') || k === 'consumer') {
       for (const el of els) {
         const attrs   = (el && el['$']) ? el['$'] : {};
-        const wsdl    = attrs.wsdlLocation || attrs.wsdlUrl || '{{WSDL_URL}}';
-        const op      = attrs.operation || attrs.operation || '{{SOAP_OPERATION}}';
-        const cfg     = { type: 'SOAP', wsdl, operation: op };
+        const wsdl    = attrs.wsdlLocation || attrs.wsdlUrl || attrs['wsdl-location'] || '{{WSDL_URL}}';
+        const op      = attrs.operation || '{{SOAP_OPERATION}}';
+        const svcName = attrs['doc:name'] || attrs.name || 'SOAP Service';
+        const cfg     = { type: 'SOAP', wsdl, operation: op, service: svcName };
         result.receiverConfigs.push(cfg);
-        result.processors.push({ type: key, label: `SOAP: ${op}`, config: cfg });
+        result.processors.push({ type: key, label: `SOAP Consumer: ${svcName}`, config: cfg });
         if (!result.connectorTypes.includes('SOAP')) result.connectorTypes.push('SOAP');
       }
     }
 
-    if (k.includes('mongo:') || k.includes('mongodb:')) {
-      for (const el of els) {
-        const attrs = (el && el['$']) ? el['$'] : {};
-        const op    = k.split(':')[1] || 'query';
-        result.processors.push({ type: key, label: `MongoDB ${op}`, config: { type: 'MongoDB', operation: op } });
-        if (!result.connectorTypes.includes('MongoDB')) result.connectorTypes.push('MongoDB');
-        result.conversionNotes.push({
-          type: 'UNMAPPED_CONNECTOR',
-          element: key,
-          severity: 'warning',
-          suggestion: 'MongoDB has no native SAP IS adapter. Use HTTPS Receiver Adapter with MongoDB Atlas Data API (https://data.mongodb-api.com/app/data-/endpoint/data/v1/action/' + op + ')'
-        });
+    // mongo:/mongodb: stripped → 'find-documents','insert-document','save','find-one' etc.
+    // Also catch the original namespace forms as fallback
+    const MONGO_OPS = new Set(['find-documents','find-one','insert-document','insert','save','update',
+                                'delete','count-documents','aggregate','map-reduce']);
+    if (k.includes('mongo:') || k.includes('mongodb:') || MONGO_OPS.has(k)) {
+      // Avoid matching generic 'insert'/'update'/'delete' already handled by JDBC block above
+      const alreadyHandledByJdbc = (k === 'insert' || k === 'update' || k === 'delete') &&
+        els.some(el => el && (el['$']?.['config-ref'] || el['parameterized-query']));
+      if (!alreadyHandledByJdbc) {
+        for (const el of els) {
+          const op = k.includes(':') ? k.split(':')[1] : k;
+          result.processors.push({ type: key, label: `MongoDB ${op}`, config: { type: 'MongoDB', operation: op } });
+          if (!result.connectorTypes.includes('MongoDB')) result.connectorTypes.push('MongoDB');
+          result.conversionNotes.push({
+            type: 'UNMAPPED_CONNECTOR',
+            element: key,
+            severity: 'warning',
+            suggestion: 'MongoDB has no native SAP IS adapter. Use HTTPS Receiver Adapter with MongoDB Atlas Data API'
+          });
+        }
       }
     }
 
@@ -465,6 +497,15 @@ function walkFlowElement(node, result, artifact) {
       for (const el of els) {
         const attrs = (el && el['$']) ? el['$'] : {};
         result.processors.push({ type: 'logger', label: `Log: ${(attrs.message || '').substring(0, 60)}` });
+      }
+    }
+
+    // ── Batch job containers: batch:step → 'step', batch:process-records → 'process-records'
+    // Walk inside these containers to extract activities
+    if (k === 'step' || k === 'process-records' || k === 'commit' ||
+        k === 'batch:step' || k === 'batch:process-records' || k === 'batch:commit') {
+      for (const el of els) {
+        if (el && typeof el === 'object') walkFlowElement(el, result, artifact);
       }
     }
 
