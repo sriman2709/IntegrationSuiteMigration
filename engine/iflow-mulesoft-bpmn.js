@@ -640,6 +640,12 @@ function buildReceiverChannelFromConfig(pd, artifact) {
         <ifl:property><key>wsdlUrl</key><value>{{WSDL_URL}}</value></ifl:property>
         <ifl:property><key>operationName</key><value>{{SOAP_OPERATION}}</value></ifl:property>`;
     }
+    if (adapterType === 'mail') {
+      return `<ifl:property><key>adapterType</key><value>mail</value></ifl:property>
+        <ifl:property><key>smtpHost</key><value>{{param.receiver.mail.host}}</value></ifl:property>
+        <ifl:property><key>from</key><value>{{FROM_EMAIL}}</value></ifl:property>
+        <ifl:property><key>to</key><value>{{TO_EMAIL}}</value></ifl:property>`;
+    }
     return `<ifl:property><key>adapterType</key><value>http</value></ifl:property>
         <ifl:property><key>address</key><value>{{param.receiver.http.address}}</value></ifl:property>`;
   }

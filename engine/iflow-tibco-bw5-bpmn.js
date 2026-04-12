@@ -279,6 +279,19 @@ function buildBw5BPMN(artifact, platformData, iflowId, iflowName, senderAdapterN
     </bpmn2:serviceTask>`
   });
 
+  // ── FIX: patch each step's bpmn2:incoming to use the real sequenceFlow ID ──
+  // buildSequenceFlowsFromSteps emits SEQ_Start_To_<first> and SEQ_FROM_<prev>
+  // but step templates were built with SEQ_TO_<id> placeholders.
+  for (let i = 0; i < steps.length; i++) {
+    const incomingId = i === 0
+      ? `SEQ_Start_To_${steps[0].id}`
+      : `SEQ_FROM_${steps[i - 1].id}`;
+    steps[i].xml = steps[i].xml.replace(
+      /<bpmn2:incoming>SEQ_TO_[^<]+<\/bpmn2:incoming>/,
+      `<bpmn2:incoming>${incomingId}</bpmn2:incoming>`
+    );
+  }
+
   const stepsXml   = steps.map(s => '    ' + s.xml).join('\n\n');
   const seqFlows   = buildSequenceFlowsFromSteps(steps, iflowId);
   const excSubs    = buildBw5ExceptionSubprocesses(errorHandlers, iflowId);
