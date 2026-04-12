@@ -110,8 +110,6 @@ router.get('/export-assessments', async (req, res) => {
     let q = `
       SELECT a.id, a.name, a.platform, a.artifact_type, a.complexity_score, a.complexity_level,
              a.tshirt_size, a.effort_days, a.readiness, a.primary_connector,
-             a.steps_count, a.adapters_count, a.maps_count, a.dependencies_count,
-             a.key_steps, a.trigger_type, a.domain, a.folder_path,
              aa.findings, aa.recommendations, aa.iflow_name, aa.iflow_package,
              aa.migration_approach, aa.identified_challenges
       FROM artifacts a
