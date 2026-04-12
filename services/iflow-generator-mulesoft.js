@@ -131,6 +131,18 @@ function analyseFlowDoc(doc, artifact) {
   };
 
   walkFlowElement(flow, result, artifact);
+
+  // Also walk batch jobs at the root level — batch:job strips to 'job' after stripPrefix.
+  // For Batch artifacts the trigger flow only has Timer+Logger; the Salesforce/DB steps
+  // live inside batch:input, batch:process-records inside the job element.
+  if (muleEl) {
+    const root     = Array.isArray(muleEl) ? muleEl[0] : muleEl;
+    const batchJobs = [].concat(root['job'] || [], root['batch:job'] || [], root['batch-job'] || []);
+    for (const job of batchJobs) {
+      if (job && typeof job === 'object') walkFlowElement(job, result, artifact);
+    }
+  }
+
   deriveAdapterList(result, artifact);
   calculateCompleteness(result);
 
@@ -251,11 +263,14 @@ function walkFlowElement(node, result, artifact) {
       }
     }
 
-    // sfdc:/salesforce: stripped → 'query','upsert','create','update-single','delete','query-single' etc.
-    const SFDC_OPS = new Set(['upsert','query-single','create-single','update-single','delete-bulk',
-                               'find-duplicates','get-deleted','get-updated','retrieve']);
+    // sfdc:/salesforce: stripped → 'query','upsert','create','update-single','delete-bulk','query-single' etc.
+    // Note: 'update' and 'delete' are intentionally excluded — they overlap with JDBC ops (handled above by param-query guard)
+    const SFDC_OPS = new Set(['query','query-single','upsert','create','create-single','update-single',
+                               'delete-bulk','find-duplicates','get-deleted','get-updated','retrieve']);
     if (k.includes('sfdc:') || k.includes('salesforce:') || SFDC_OPS.has(k) ||
-        (k === 'upsert' && els.some(el => el?.['$']?.['config-ref']?.toLowerCase().includes('salesforce')))) {
+        // catch generic 'query' or 'create' with a salesforce config-ref
+        (['query','create','update','delete'].includes(k) &&
+         els.some(el => el?.['$']?.['config-ref']?.toLowerCase().includes('salesforce')))) {
       for (const el of els) {
         const attrs     = (el && el['$']) ? el['$'] : {};
         const operation = k.includes(':') ? k.split(':')[1] : k;
@@ -500,10 +515,13 @@ function walkFlowElement(node, result, artifact) {
       }
     }
 
-    // ── Batch job containers: batch:step → 'step', batch:process-records → 'process-records'
-    // Walk inside these containers to extract activities
-    if (k === 'step' || k === 'process-records' || k === 'commit' ||
-        k === 'batch:step' || k === 'batch:process-records' || k === 'batch:commit') {
+    // ── Batch job containers: batch:* strips to bare names after stripPrefix
+    // batch:input → 'input'  (Salesforce query lives here)
+    // batch:process-records → 'process-records', batch:step → 'step'
+    // batch:commit → 'commit', batch:on-complete → 'on-complete'
+    if (k === 'input'  || k === 'step' || k === 'process-records' || k === 'commit' || k === 'on-complete' ||
+        k === 'batch:input' || k === 'batch:step' || k === 'batch:process-records' ||
+        k === 'batch:commit' || k === 'batch:on-complete') {
       for (const el of els) {
         if (el && typeof el === 'object') walkFlowElement(el, result, artifact);
       }
