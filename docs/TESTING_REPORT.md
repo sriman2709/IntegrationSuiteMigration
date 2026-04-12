@@ -15,21 +15,21 @@
 
 | Artifact | Parse | Assess | Convert | Quality | Download | Notes |
 |----------|-------|--------|---------|---------|----------|-------|
-| Hello_World_HTTP | ✅ | ✅ | — | — | — | 2 steps, HTTP, header ✅ |
-| HTTP_Request_With_Logger | ✅ | ✅ | — | — | — | 3 steps, HTTP, header ✅ |
-| Content_Based_Routing | ✅ | ✅ | — | — | — | 0 outbound connectors (correct). Fixed e1193f2 |
-| Scatter_Gather_Flow | ✅ | ✅ | — | — | — | SMTP ✅, DataWeave ✅, header ✅ |
-| Foreach_And_Choice_Routing | ✅ | ✅ | — | — | — | 22 steps, 2 HTTP connectors, High ✅ |
-| Choice_Exception_Strategy | ✅ | ✅ | — | — | — | 0 outbound (correct). 2 DW scripts ✅. Fixed e1193f2 |
-| DataWeave_Orders_API | ✅ | ⚠ | — | — | — | Header null (assessed pre-fix) — re-assess needed |
-| Database_To_JSON | ✅ | ⚠ | — | — | — | 1 step only (db:select → 'select' stripped). Fixed 1204945 — re-assess |
-| JSON_To_JMS_Queue | ✅ | ✅ | — | — | — | JMS ✅, 1 connector, header ✅ |
-| CSV_To_MongoDB | ✅ | ⚠ | — | — | — | MongoDB ops stripped. Fixed 1204945 — re-assess |
-| SMTP_CSV_Email | ✅ | ✅ | — | — | — | SMTP ✅, DataWeave ✅, header ✅ |
-| SOAP_Webservice_Consumer | ✅ | ⚠ | — | — | — | ws:consumer stripped to 'consumer'. Fixed 1204945 — re-assess |
-| Service_Orchestration_Choice | ✅ | ✅ | — | — | — | 3 connectors, 10 steps, JMS ✅, header ✅ |
-| Salesforce_To_MySQL_Batch | ✅ | ⚠ | — | — | — | batch:step not walked. Fixed 1204945 — re-assess |
-| JMS_Rollback_Redelivery | ✅ | ✅ | — | — | — | JMS ✅, error handling ✅, header ✅ |
+| Hello_World_HTTP | ✅ | ✅ | ⚠ | ⚠ | ⚠ | 2 steps, HTTP. Convert: needs re-run with 31321a0 fixes |
+| HTTP_Request_With_Logger | ✅ | ✅ | ⚠ | ⚠ | ⚠ | 3 steps, HTTP. Needs re-run |
+| Content_Based_Routing | ✅ | ✅ | ⚠ | ⚠ | ⚠ | 0 outbound. Needs re-run |
+| Scatter_Gather_Flow | ✅ | ✅ | ⚠ | ⚠ | ⚠ | SMTP ✅, DataWeave ✅. Needs re-run |
+| Foreach_And_Choice_Routing | ✅ | ✅ | ⚠ | ⚠ | ⚠ | 22 steps, 2 HTTP. Needs re-run |
+| Choice_Exception_Strategy | ✅ | ✅ | ⚠ | ⚠ | ⚠ | 0 outbound, 2 DW scripts. Needs re-run |
+| DataWeave_Orders_API | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | Header null pre-fix — re-assess + re-convert |
+| Database_To_JSON | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | Fixed 1204945 — re-assess + re-convert (receiver should be jdbc) |
+| JSON_To_JMS_Queue | ✅ | ✅ | ⚠ | ⚠ | ⚠ | JMS ✅. Needs re-run |
+| CSV_To_MongoDB | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | MongoDB gap (S14). Needs re-run |
+| SMTP_CSV_Email | ✅ | ✅ | ⚠ | ⚠ | ⚠ | SMTP ✅, DataWeave ✅. Needs re-run |
+| SOAP_Webservice_Consumer | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | SOAP fixed 1204945. Needs re-assess + re-convert |
+| Service_Orchestration_Choice | ✅ | ✅ | ⚠ | ⚠ | ⚠ | 3 connectors, JMS ✅. Needs re-run |
+| Salesforce_To_MySQL_Batch | ✅ | ⚠ | ⚠ | ⚠ | ⚠ | batch fixed 1204945. Re-assess + re-convert (receiver: salesforce) |
+| JMS_Rollback_Redelivery | ✅ | ✅ | ⚠ | ⚠ | ⚠ | JMS ✅, error handling ✅. Needs re-run |
 
 ## TIBCO BW6 Artifacts (5)
 
@@ -71,6 +71,9 @@
 | 2026-04-11 | CSV_To_MongoDB | Assess | MongoDB not flagged | mongodb:ops stripped to find-documents etc. MONGO_OPS set added | 1204945 |
 | 2026-04-11 | Salesforce_To_MySQL_Batch | Assess | 2 steps only | batch:job→'job', batch:step not walked. Fixed doc+walk | 1204945 |
 | 2026-04-11 | ALL BW5 | Assess | type='unknown', 0 maps, wrong connectors | BW5 type in child <pd:type> element not attrs. bw5ActivityType() helper added | pending |
+| 2026-04-12 | ALL MuleSoft (15) | Convert | SEQ_TO_{id} in bpmn2:incoming — no matching sequenceFlow | Post-process step XML to replace placeholder IDs with real SEQ_Start/SEQ_FROM IDs | 31321a0 |
+| 2026-04-12 | ALL MuleSoft (15) | Convert | 0 Groovy files in ZIP | buildMuleSoftGroovyScripts checked proc.type==='dataweave' but type is 'transform-message'. Rewrote to mirror buildStepsFromProcessors name logic | 31321a0 |
+| 2026-04-12 | ALL MuleSoft (15) | Convert | Receiver adapter always 'http' | Added deriveReceiverAdapterType() — resolves jdbc/salesforce/jms/sftp/rfc/soap from connectorTypes+primary_connector | 31321a0 |
 
 ---
 
