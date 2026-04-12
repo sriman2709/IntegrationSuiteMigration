@@ -1609,6 +1609,8 @@ async function runAssessment() {
   try {
     const result = await api(`/api/artifacts/${state.currentArtifactId}/assess`, 'POST');
     state.currentAssessment = result;
+    // Refresh artifact so report header uses updated complexity/tshirt/effort from DB
+    await refreshDetailHeader(state.currentArtifactId);
     document.getElementById('assessment-loading').style.display = 'none';
     renderAssessment(result);
     toast('Assessment complete!', 'success');

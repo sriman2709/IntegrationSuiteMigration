@@ -156,11 +156,12 @@ router.post('/:id/assess', async (req, res) => {
     const recvCfgs    = platformData.receiverConfigs || [];
     const errorHandlers = platformData.errorHandlers || [];
 
-    // Count xslt-type processors + standalone xsltTransforms for maps
+    // Count xslt-type processors + standalone xsltTransforms + BW5 mappers for maps
+    const mappers        = platformData.mappers || [];
     const xsltProcessors = processors.filter(p => p.type === 'xslt').length;
     const derivedShapes      = processors.length || art.shapes_count || 0;
     const derivedConnectors  = Math.max(connTypes.length, recvCfgs.length) || art.connectors_count || 0;
-    const derivedMaps        = xsltProcessors + xslts.length || art.maps_count || 0;
+    const derivedMaps        = xsltProcessors + xslts.length + mappers.length || art.maps_count || 0;
     const derivedScripting   = scripts.length > 0 || art.has_scripting || false;
     const derivedDeps        = errorHandlers.length || art.dependencies_count || 0;
 

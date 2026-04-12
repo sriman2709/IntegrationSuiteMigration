@@ -74,7 +74,10 @@ function buildFindings(artifact, pd, platform) {
 
   // ── Connectors & Adapters ─────────────────────────────────────────────────
   const connItems = [];
-  const connTypes = pd.connectorTypes || [artifact.primary_connector || 'HTTP'];
+  // Guard: treat empty array same as missing — fall back to primary_connector
+  const connTypes = (pd.connectorTypes && pd.connectorTypes.length > 0)
+    ? pd.connectorTypes
+    : [artifact.primary_connector || 'HTTP'];
   connItems.push(`Primary connector: ${artifact.primary_connector || 'HTTP/REST'}`);
   connItems.push(`All adapters: ${connTypes.join(', ')}`);
   connItems.push(...getPlatformConnectorNotes(platform, artifact, pd));

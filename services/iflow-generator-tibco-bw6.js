@@ -94,9 +94,19 @@ async function extractBw6PlatformData(artifact) {
     result.receiverConfigs = receiverCfgs;
     result.triggerType = senderCfg ? senderCfg.triggerType : (artifact.trigger_type || 'API');
 
-    // Connector types
+    // Connector types — derive from BPEL invoke elements AND extensionActivity roles
     const connSet = new Set(receiverCfgs.map(r => r.type).filter(Boolean));
     if (senderCfg && senderCfg.type) connSet.add(senderCfg.type);
+    // Also scan processor roles for invoke-* types (covers extensionActivity/bw.jdbc etc.)
+    const invokeRoleMap = {
+      'invoke-http': 'HTTP', 'invoke-soap': 'SOAP', 'invoke-jms': 'JMS',
+      'invoke-jdbc': 'JDBC', 'invoke-sftp': 'SFTP', 'invoke-file-write': 'SFTP',
+      'invoke-file-read': 'SFTP', 'invoke-smtp': 'SMTP', 'invoke-sap': 'SAP'
+    };
+    for (const proc of result.processors) {
+      // proc.type is the mapped role — find original act role from ordered activities
+      if (proc.config && proc.config.connType) connSet.add(proc.config.connType);
+    }
     result.connectorTypes = [...connSet];
     if (result.connectorTypes.length === 0) result.connectorTypes = ['HTTP'];
 
