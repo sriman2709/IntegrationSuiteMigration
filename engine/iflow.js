@@ -276,45 +276,76 @@ function buildFieldMappingComments(artifact, pd, idx) {
 
 // ── Groovy Scripts ────────────────────────────────────────────────────────────
 
-// ── MuleSoft: emit one Groovy file per DataWeave transform step ──────────────
+// ── MuleSoft: emit one Groovy file per DataWeave / transform step ─────────────
+// Uses the same naming logic as buildStepsFromProcessors so file names align
+// exactly with the ref:${name}.groovy references in the generated BPMN2 XML.
 function buildMuleSoftGroovyScripts(artifact, pd) {
-  const scripts = [];
-  const processors = pd.processors || [];
-  let dwIndex = 0;
+  const outputScripts = [];
+  const processors    = pd.processors || [];
+  const legacyScripts = pd.scripts    || [];
+  let scriptIdx = 0;
+  let mapIdx    = 0;
 
-  processors.forEach(proc => {
-    // Direct DataWeave steps
-    if (proc.type === 'dataweave' && proc.dwScript) {
-      scripts.push(buildGroovyFromDataWeave(artifact, proc.dwScript, dwIndex++));
-    }
-    // Groovy/script steps that carry a dwScript payload (e.g. melToGroovy translations)
-    if (proc.type === 'script' && proc.dwScript) {
-      scripts.push(buildGroovyFromDataWeave(artifact, proc.dwScript, dwIndex++));
-    }
-  });
+  // ── Pass 1: walk processors the same way buildStepsFromProcessors does ──────
+  for (const proc of processors) {
+    const k = (proc.type || '').toLowerCase();
 
-  // Also include any scripts extracted at top level (e.g. legacy pd.scripts array)
-  const legacyScripts = pd.scripts || [];
-  legacyScripts.forEach((s, i) => {
-    if (typeof s === 'object' && s.dwScript) {
-      scripts.push(buildGroovyFromDataWeave(artifact, s.dwScript, dwIndex + i));
-    } else if (typeof s === 'object' && s.type === 'dataweave') {
-      // Normalise: treat the whole object as dwScript if it has .body
-      if (s.body) scripts.push(buildGroovyFromDataWeave(artifact, s, dwIndex + i));
-    }
-  });
+    // Skip sender triggers (same guard as buildStepsFromProcessors / isSenderElement)
+    if (k === 'http:listener' || k === 'listener' || k.includes('inbound-endpoint') ||
+        k === 'scheduler' || k.includes('poll') ||
+        (k.includes('jms') && k.includes('listener')) ||
+        (k.includes('sftp') && k.includes('inbound'))) continue;
 
-  // If no DW scripts were found but artifact had DataWeave, emit one generic stub
-  if (scripts.length === 0 && (pd.hasDataWeave || processors.some(p => p.type === 'dataweave'))) {
+    const isTransform = k.includes('transform') || k === 'transform-message' || k === 'ee:transform';
+    if (!isTransform) continue;
+
+    // Mirror the name-resolution in buildStepsFromProcessors / buildScriptStep:
+    //   scriptName = scripts[scriptIdx].name  OR  "Transform_N"
+    //   safeName   = scriptName.replace(/[^a-zA-Z0-9_]/g, '_')   (from buildScriptStep)
+    const scriptMeta = legacyScripts[scriptIdx++] || null;
+    const rawName    = (scriptMeta && scriptMeta.name) ? scriptMeta.name : `Transform_${mapIdx + 1}`;
+    const safeName   = rawName.replace(/[^a-zA-Z0-9_]/g, '_');
+    mapIdx++;
+
+    outputScripts.push({
+      filename: `${safeName}.groovy`,
+      content: buildGroovyContent(
+        artifact, safeName, safeName, 'mulesoft',
+        scriptMeta || { type: 'dataweave' }, mapIdx - 1
+      )
+    });
+  }
+
+  // ── Pass 2: if processors gave nothing, emit a file for every pd.scripts entry ─
+  // (covers: old extractor output where processors may be sparse)
+  if (outputScripts.length === 0 && legacyScripts.length > 0) {
+    legacyScripts.forEach((s, i) => {
+      const rawName  = (typeof s === 'object' ? s.name : s) || `Transform_${i + 1}`;
+      const safeName = String(rawName).replace(/[^a-zA-Z0-9_]/g, '_');
+      outputScripts.push({
+        filename: `${safeName}.groovy`,
+        content: buildGroovyContent(
+          artifact, safeName, safeName, 'mulesoft',
+          typeof s === 'object' ? s : { type: 'dataweave' }, i
+        )
+      });
+    });
+  }
+
+  // ── Pass 3: last-resort stub if we know transforms should exist ──────────────
+  if (outputScripts.length === 0 && (pd.hasDataWeave || processors.some(p => {
+    const k = (p.type || '').toLowerCase();
+    return k.includes('transform') || k === 'transform-message' || k === 'ee:transform';
+  }))) {
     const safeId = artifact.name.replace(/[^a-zA-Z0-9]/g, '_');
-    const name = `${safeId}_Transform_1`;
-    scripts.push({
+    const name   = `${safeId}_Transform_1`;
+    outputScripts.push({
       filename: `${name}.groovy`,
       content: buildGroovyContent(artifact, name, name, 'mulesoft', { type: 'dataweave' }, 0)
     });
   }
 
-  return scripts;
+  return outputScripts;
 }
 
 function buildGroovyScripts(artifact, pd) {
