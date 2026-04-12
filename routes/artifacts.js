@@ -442,6 +442,71 @@ router.post('/:id/assess', async (req, res) => {
   }
 });
 
+// ── BULK CONVERT — all artifacts for a project or source ─────────────────────
+// POST /api/artifacts/bulk-convert  body: { projectId, sourceId (optional) }
+// Runs the full conversion + quality pipeline on every matching artifact.
+// Returns: { total, passed, failed, results[] }
+router.post('/bulk-convert', async (req, res) => {
+  const { projectId, sourceId } = req.body;
+  if (!projectId) return res.status(400).json({ error: 'projectId required' });
+
+  try {
+    let query = 'SELECT a.*, p.platform AS project_platform FROM artifacts a LEFT JOIN projects p ON p.id = a.project_id WHERE a.project_id = $1';
+    const params = [projectId];
+    if (sourceId) { query += ' AND a.source_id = $2'; params.push(sourceId); }
+    query += ' ORDER BY a.name';
+
+    const { rows: artifacts } = await pool.query(query, params);
+    const results = [];
+
+    for (const art of artifacts) {
+      try {
+        const platformData = await resolvePlatformData(art);
+        const convOutput   = runConversion(art, platformData);
+        const pkg          = generateIFlowPackage(art, platformData, convOutput);
+
+        const runCount  = await pool.query('SELECT COUNT(*) FROM conversion_runs WHERE artifact_id = $1', [art.id]);
+        const runNumber = parseInt(runCount.rows[0].count) + 1;
+
+        const runResult = await pool.query(
+          `INSERT INTO conversion_runs (artifact_id, run_number, convert_output, status)
+           VALUES ($1, $2, $3, 'converting') RETURNING *`,
+          [art.id, runNumber, JSON.stringify(convOutput)]
+        );
+
+        const quality      = runQualityAnalysis(art, platformData);
+        const notes        = quality.flags;
+        const completeness = quality.score;
+        const readiness    = quality.readiness;
+
+        await pool.query("UPDATE conversion_runs SET status = 'converted', updated_at = NOW() WHERE id = $1", [runResult.rows[0].id]);
+        await pool.query(
+          `UPDATE artifacts SET
+            status = 'converted', conversion_status = 'converted',
+            converted_at = NOW(), iflow_xml = $1,
+            conversion_notes = $2, conversion_completeness = $3,
+            readiness = $4, updated_at = NOW()
+           WHERE id = $5`,
+          [convOutput.iflow_xml || null, JSON.stringify(notes), completeness, readiness, art.id]
+        );
+
+        results.push({ id: art.id, name: art.name, status: 'ok', completeness, readiness, iflowName: pkg.iflowName });
+      } catch (err) {
+        results.push({ id: art.id, name: art.name, status: 'error', error: err.message });
+      }
+    }
+
+    await pool.query('UPDATE projects SET updated_at = NOW() WHERE id = $1', [projectId]);
+
+    const passed = results.filter(r => r.status === 'ok').length;
+    const failed = results.filter(r => r.status === 'error').length;
+    res.json({ total: results.length, passed, failed, results });
+  } catch (err) {
+    console.error('Bulk convert error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── CONVERT ───────────────────────────────────────────────────────────────────
 router.post('/:id/convert', async (req, res) => {
   const { id } = req.params;
