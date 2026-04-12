@@ -172,6 +172,24 @@ function extractBw5SenderConfig(root, artifact) {
 }
 
 // ── Extract activity elements ─────────────────────────────────────────────────
+// BW5 activity type is stored as a child element <pd:type>text</pd:type>, NOT an attribute.
+// After xml2js stripPrefix: act['type'][0] = 'com.tibco.plugin.mapper.MapperActivity' (string)
+// attrs.type is always undefined — never rely on it for BW5 type resolution.
+function bw5ActivityType(act) {
+  const attrs = act['$'] || {};
+  // 1. Child element <pd:type> → act['type'][0] (string or { _: '...' })
+  const typeEl = act['type'] || act['Type'];
+  if (typeEl) {
+    const raw = Array.isArray(typeEl) ? typeEl[0] : typeEl;
+    const txt = typeof raw === 'string' ? raw : (raw?.['_'] || '');
+    if (txt) return txt.toLowerCase();
+  }
+  // 2. xsi:type attribute (rare in BW5, common in BW6 BPWS)
+  const xsiType = attrs['xsi:type'] || attrs.type;
+  if (xsiType) return xsiType.toLowerCase();
+  return 'unknown';
+}
+
 function extractBw5Activities(root) {
   const activities = [];
   const activityKeys = ['activity', 'Activity'];
@@ -181,10 +199,11 @@ function extractBw5Activities(root) {
     const acts = Array.isArray(root[key]) ? root[key] : [root[key]];
     for (const act of acts) {
       const attrs = act['$'] || {};
+      const type  = bw5ActivityType(act);
       activities.push({
         name:    attrs.name || `Activity_${activities.length + 1}`,
-        type:    (attrs.type || attrs['xsi:type'] || 'unknown').toLowerCase(),
-        rawType: attrs.type || attrs['xsi:type'] || '',
+        type,
+        rawType: type,
         raw:     act
       });
     }
@@ -201,10 +220,11 @@ function extractBw5Activities(root) {
         const acts = Array.isArray(g[actKey]) ? g[actKey] : [g[actKey]];
         for (const act of acts) {
           const attrs = act['$'] || {};
+          const type  = bw5ActivityType(act);
           activities.push({
             name:    attrs.name || `GroupActivity_${activities.length + 1}`,
-            type:    (attrs.type || attrs['xsi:type'] || 'unknown').toLowerCase(),
-            rawType: attrs.type || attrs['xsi:type'] || '',
+            type,
+            rawType: type,
             raw:     act,
             inGroup: true
           });
@@ -360,7 +380,7 @@ function extractBw5XsltTransforms(root, artifact) {
     const acts = Array.isArray(root[key]) ? root[key] : [root[key]];
     for (const act of acts) {
       const attrs = act['$'] || {};
-      const type  = (attrs.type || attrs['xsi:type'] || '').toLowerCase();
+      const type  = bw5ActivityType(act);   // use child-element-aware helper
       const name  = (attrs.name || 'Transform').replace(/[^a-zA-Z0-9]/g, '_');
 
       if (!/mapper|transform|xslt|map/i.test(type)) continue;
@@ -389,7 +409,7 @@ function extractBw5JavaScripts(root, artifact) {
     const acts = Array.isArray(root[key]) ? root[key] : [root[key]];
     for (const act of acts) {
       const attrs = act['$'] || {};
-      const type  = (attrs.type || attrs['xsi:type'] || '').toLowerCase();
+      const type  = bw5ActivityType(act);   // use child-element-aware helper
       const name  = (attrs.name || 'Script').replace(/[^a-zA-Z0-9]/g, '_');
 
       if (!/java|script|groovy|javascript/i.test(type)) continue;
@@ -475,16 +495,15 @@ function extractBw5ReceiverConfigs(root, artifact) {
     if (!root[key]) continue;
     const acts = Array.isArray(root[key]) ? root[key] : [root[key]];
     for (const act of acts) {
-      const attrs = act['$'] || {};
-      const type  = (attrs.type || attrs['xsi:type'] || '').toLowerCase();
+      const type = bw5ActivityType(act);  // use child-element-aware helper
 
       let connType = null;
-      if (/jdbc|sql|database|db/i.test(type))           connType = 'JDBC';
-      else if (/http\.send|http\.call|soap/i.test(type)) connType = 'HTTP';
-      else if (/jms|ems/i.test(type))                   connType = 'JMS';
-      else if (/sftp|ftp|file\.write/i.test(type))      connType = 'SFTP';
-      else if (/smtp|mail/i.test(type))                  connType = 'SMTP';
-      else if (/sap|bapi|rfc/i.test(type))              connType = 'SAP';
+      if (/jdbc|sql|database|db/i.test(type))            connType = 'JDBC';
+      else if (/http\.send|http\.call|httpclient|soap\.call|sendreceive/i.test(type)) connType = 'HTTP';
+      else if (/jms|ems/i.test(type))                    connType = 'JMS';
+      else if (/sftp|ftp|file\.write/i.test(type))       connType = 'SFTP';
+      else if (/smtp|mail/i.test(type))                   connType = 'SMTP';
+      else if (/sap|bapi|rfc/i.test(type))               connType = 'SAP';
 
       if (connType && !seen.has(connType)) {
         seen.add(connType);

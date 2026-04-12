@@ -15,21 +15,21 @@
 
 | Artifact | Parse | Assess | Convert | Quality | Download | Notes |
 |----------|-------|--------|---------|---------|----------|-------|
-| Hello_World_HTTP | — | — | — | — | — | Simple HTTP listener + logger |
-| HTTP_Request_With_Logger | — | — | — | — | — | HTTP in+out + logger |
-| Content_Based_Routing | ✅ | ⚠ | — | — | — | 0 adapters (correct — no outbound). All adapters: blank fixed (e1193f2) |
-| Scatter_Gather_Flow | ✅ | ✅ | — | — | — | SMTP connector ✅, DataWeave script ✅, header ✅ |
-| Foreach_And_Choice_Routing | — | — | — | — | — | foreach + choice (loan broker) |
-| Choice_Exception_Strategy | ✅ | ⚠ | — | — | — | Header null fixed (e1193f2). 0 outbound connectors (correct). 2 DW scripts ✅ |
-| DataWeave_Orders_API | — | — | — | — | — | Expect SCRIPTING_PRESERVED flag |
-| Database_To_JSON | — | — | — | — | — | Expect JDBC connector |
-| JSON_To_JMS_Queue | — | — | — | — | — | Expect JMS connector |
-| CSV_To_MongoDB | ✅ | ⚠ | — | — | — | Header null fixed (e1193f2). MongoDB connector not yet flagged — S14 gap |
-| SMTP_CSV_Email | — | — | — | — | — | Expect SMTP connector |
-| SOAP_Webservice_Consumer | — | — | — | — | — | Expect SOAP connector |
-| Service_Orchestration_Choice | — | — | — | — | — | Multi-connector pattern |
-| Salesforce_To_MySQL_Batch | — | — | — | — | — | Expect Salesforce + JDBC |
-| JMS_Rollback_Redelivery | — | — | — | — | — | Expect JMS + error handling |
+| Hello_World_HTTP | ✅ | ✅ | — | — | — | 2 steps, HTTP, header ✅ |
+| HTTP_Request_With_Logger | ✅ | ✅ | — | — | — | 3 steps, HTTP, header ✅ |
+| Content_Based_Routing | ✅ | ✅ | — | — | — | 0 outbound connectors (correct). Fixed e1193f2 |
+| Scatter_Gather_Flow | ✅ | ✅ | — | — | — | SMTP ✅, DataWeave ✅, header ✅ |
+| Foreach_And_Choice_Routing | ✅ | ✅ | — | — | — | 22 steps, 2 HTTP connectors, High ✅ |
+| Choice_Exception_Strategy | ✅ | ✅ | — | — | — | 0 outbound (correct). 2 DW scripts ✅. Fixed e1193f2 |
+| DataWeave_Orders_API | ✅ | ⚠ | — | — | — | Header null (assessed pre-fix) — re-assess needed |
+| Database_To_JSON | ✅ | ⚠ | — | — | — | 1 step only (db:select → 'select' stripped). Fixed 1204945 — re-assess |
+| JSON_To_JMS_Queue | ✅ | ✅ | — | — | — | JMS ✅, 1 connector, header ✅ |
+| CSV_To_MongoDB | ✅ | ⚠ | — | — | — | MongoDB ops stripped. Fixed 1204945 — re-assess |
+| SMTP_CSV_Email | ✅ | ✅ | — | — | — | SMTP ✅, DataWeave ✅, header ✅ |
+| SOAP_Webservice_Consumer | ✅ | ⚠ | — | — | — | ws:consumer stripped to 'consumer'. Fixed 1204945 — re-assess |
+| Service_Orchestration_Choice | ✅ | ✅ | — | — | — | 3 connectors, 10 steps, JMS ✅, header ✅ |
+| Salesforce_To_MySQL_Batch | ✅ | ⚠ | — | — | — | batch:step not walked. Fixed 1204945 — re-assess |
+| JMS_Rollback_Redelivery | ✅ | ✅ | — | — | — | JMS ✅, error handling ✅, header ✅ |
 
 ## TIBCO BW6 Artifacts (5)
 
@@ -66,6 +66,11 @@
 | 2026-04-11 | MuleSoft (no outbound) | Assess | All adapters: blank | connectorTypes [] (empty array) not falling back — length guard added | e1193f2 |
 | 2026-04-11 | All BW5 + most BW6 | Assess | maps_count = 0 | derivedMaps now includes pd.mappers (BW5 format) | e1193f2 |
 | 2026-04-11 | BW6_Credit_DB_Lookup | Assess | Shows HTTP not JDBC | extensionActivity bw.jdbc.* now scanned via proc.config.connType | e1193f2 |
+| 2026-04-11 | Database_To_JSON | Assess | 1 step, 0 connectors | db:select→'select' after stripPrefix not matched. Stripped-name guard added | 1204945 |
+| 2026-04-11 | SOAP_Webservice_Consumer | Assess | 0 SOAP connector | ws:consumer→'consumer' after stripPrefix not matched. k==='consumer' added | 1204945 |
+| 2026-04-11 | CSV_To_MongoDB | Assess | MongoDB not flagged | mongodb:ops stripped to find-documents etc. MONGO_OPS set added | 1204945 |
+| 2026-04-11 | Salesforce_To_MySQL_Batch | Assess | 2 steps only | batch:job→'job', batch:step not walked. Fixed doc+walk | 1204945 |
+| 2026-04-11 | ALL BW5 | Assess | type='unknown', 0 maps, wrong connectors | BW5 type in child <pd:type> element not attrs. bw5ActivityType() helper added | pending |
 
 ---
 
