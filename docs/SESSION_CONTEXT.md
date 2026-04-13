@@ -21,29 +21,32 @@
 See `docs/SPRINT_PLAN.md` for full definition.
 
 ## Last Action (update this every session end)
-> 2026-04-12: S13 — round-2 fixes pushed in commit 730dc6f.
+> 2026-04-13: S13 bugs fixed + S14 architectural refactor complete. Two commits pushed:
 >
-> Bug 3 (root-cause) — engine/iflow.js buildIFlowXML:
->   enrichConversionXML short-circuited the real builders because conv.iflow_xml always
->   contained 'bpmn2:definitions' (Sprint 1 generic XML). Added hasRealBuilder check:
->   MuleSoft (processors > 0), BW5 (always), BW6 (always) — all bypass the cache.
->   buildFullBPMN: removed processors.length > 0 guard for BW5/BW6 routes so dedicated
->   builders are called even when extractor returns empty processor arrays.
+> Commit 730dc6f — S13 Bug fixes (round 2):
+>   - Bug 3 root-cause: hasRealBuilder in buildIFlowXML now bypasses enrichConversionXML
+>     for MuleSoft (processors > 0), BW5 (always), BW6 (always).
+>   - Bug 1 carry-over: post-processing incoming-ID fix added to buildBw5BPMN and
+>     buildBw6BPMN (same loop as MuleSoft, Router-aware for BW6).
+>   - Mail gap: added 'mail' case to !rc branch of buildReceiverChannelFromConfig.
 >
-> Bug 1 carry-over — BW5 & BW6 dedicated builders:
->   Same incoming ID mismatch as MuleSoft Bug 1: steps used SEQ_TO_* placeholders but
->   buildSequenceFlowsFromSteps emitted SEQ_Start_To_* / SEQ_FROM_*. Added identical
->   post-processing loop to buildBw5BPMN and buildBw6BPMN (Router-aware for BW6).
+> Commit d9fdc42 — Real vs Mock/Demo path separation (S14 arch):
+>   - DB: data_source VARCHAR(10) DEFAULT 'mock' added to artifacts table.
+>     Back-fill: raw_xml IS NOT NULL → data_source='real' (covers all 24 real artifacts).
+>   - routes/artifacts.js: resolvePlatformData() split into resolveRealPlatformData()
+>     + resolveMockPlatformData() + explicit dispatcher. convForPackage guard at all 3
+>     call sites (bulk convert, single convert, download) nulls conv.iflow_xml on real path.
+>   - 4 upload services: data_source set at INSERT time (raw_xml ? 'real' : 'mock').
+>   - 4 connectors: _source 'generated' → 'mock'.
+>   - seed-real-artifacts.js: both UPDATE and INSERT write data_source='real'.
+>   - UI: green Live / blue Demo badge on artifact name cell (reuses badge-green/badge-blue).
 >
-> MuleSoft gap — iflow-mulesoft-bpmn.js:
->   Added missing 'mail' case to !rc branch of buildReceiverChannelFromConfig.
->
-> Fixes in 31321a0 (still valid):
->   Bug 1 MuleSoft: post-processing loop patching incoming IDs — ✅ verified 15/15
->   Bug 2 Groovy: buildMuleSoftGroovyScripts now mirrors buildStepsFromProcessors — ✅ 24/24
->   Bug 3 initial: deriveReceiverAdapterType() added to mulesoft receiver builders
->
-> NEXT: Re-run Convert All → Download All iFlows → re-audit fresh ZIPs
+> IMMEDIATE NEXT (on MacBook Air):
+>   1. Run: node database/seed-real-artifacts.js  (back-fills data_source='real' on 24 artifacts)
+>   2. Convert All → Download All iFlows on Azure app → delete old expanded folders
+>   3. Extract fresh ZIPs → audit: Bug 1 (all 24 SEQ IDs), Bug 3 (all adapter types correct)
+>   4. Update TESTING_REPORT.md with final S13 results
+>   5. If all 24 pass: close S13, begin S14 seeding (8 new artifacts from test-data/)
 
 ## What's Built and Working
 - Upload ZIP → parse → artifact cards (MuleSoft, BW5, BW6, Boomi)
@@ -69,12 +72,15 @@ Test files in: `test-data/` (gitignored locally)
 Testing matrix: see `docs/TESTING_REPORT.md`
 
 ## Known Issues / Watch List
+- S13 Convert/Download re-audit still pending (need fresh run on MacBook Air after Azure deploy)
 - BW5 extractor: `pd.platform` must return `'tibco-bw5'` — verify it does (check extractBw5PlatformData return)
 - MuleSoft `request` (stripped from `http:request`): added `k === 'request'` check — verify it doesn't
   catch non-HTTP request elements
 - `scatter-gather` internal branches not walked for connectors (expression-components, not real connectors — OK)
 - Boomi: deferred (no real sample files, trial API limitations)
 - SAP PI/PO: not started
+- MacBook Air: whitelist its IP in Azure Postgres firewall before running seed script
+  (Settings → Connection Security → add IP)
 
 ## Key Files (never guess these paths)
 ```
