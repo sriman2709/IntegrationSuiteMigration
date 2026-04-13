@@ -149,6 +149,10 @@ async function initDb() {
     await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS conversion_notes JSONB DEFAULT '[]'`);
     await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS conversion_completeness INT DEFAULT 0`);
 
+    // ── S14: Explicit real vs mock/demo path discriminator ────────────────────
+    await client.query(`ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS data_source VARCHAR(10) DEFAULT 'mock'`);
+    await client.query(`UPDATE artifacts SET data_source = 'real' WHERE raw_xml IS NOT NULL AND data_source = 'mock'`);
+
     console.log('Database schema initialized.');
   } finally {
     client.release();

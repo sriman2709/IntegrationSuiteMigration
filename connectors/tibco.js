@@ -100,7 +100,7 @@ class TIBCOConnector {
       errorHandling: { type: artifact.error_handling, hasTimeout: artifact.error_handling !== 'none', timeoutSeconds: 30, hasFaultHandler: artifact.error_handling !== 'none' },
       dependencies: Array.from({ length: artifact.dependencies_count || 1 }, (_, i) => `Library_${i + 1}.bwlib`),
       iflowAdapters: this._inferIFlowAdapters(artifact),
-      _source: 'generated', _mode: 'mock'
+      _source: 'mock', _mode: 'mock'
     };
   }
 

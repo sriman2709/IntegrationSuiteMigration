@@ -342,7 +342,7 @@ class BoomiConnector {
       errorHandling: { type: artifact.error_handling, hasRetry: artifact.error_handling !== 'none', retryAttempts: artifact.error_handling === 'multi_try_catch' ? 3 : 1 },
       dependencies: Array.from({ length: artifact.dependencies_count || 1 }, (_, i) => `Dependency_${i + 1}`),
       iflowAdapters: this._inferIFlowAdapters(artifact),
-      _source: 'generated', _mode: 'mock'
+      _source: 'mock', _mode: 'mock'
     };
   }
 

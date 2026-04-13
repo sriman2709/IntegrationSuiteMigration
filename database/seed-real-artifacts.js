@@ -241,7 +241,7 @@ async function seedGroup(files, platform, projectId, sourceId) {
 
     if (res.rows.length) {
       await pool.query(
-        `UPDATE artifacts SET raw_xml=$1, artifact_type=$2 WHERE id=$3`,
+        `UPDATE artifacts SET raw_xml=$1, artifact_type=$2, data_source='real' WHERE id=$3`,
         [rawXml, entry.artifact_type, res.rows[0].id]
       );
       console.log(`  UPDATED  ${entry.name} (id=${res.rows[0].id})`);
@@ -249,8 +249,8 @@ async function seedGroup(files, platform, projectId, sourceId) {
       const ins = await pool.query(
         `INSERT INTO artifacts
            (project_id, source_id, name, platform, artifact_type,
-            raw_xml, conversion_status, conversion_completeness, readiness, status)
-         VALUES ($1,$2,$3,$4,$5,$6,'pending',0,'Manual','active') RETURNING id`,
+            raw_xml, data_source, conversion_status, conversion_completeness, readiness, status)
+         VALUES ($1,$2,$3,$4,$5,$6,'real','pending',0,'Manual','active') RETURNING id`,
         [projectId, sourceId, entry.name, platform, entry.artifact_type, rawXml]
       );
       console.log(`  INSERTED ${entry.name} (id=${ins.rows[0].id})`);

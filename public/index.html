@@ -1477,7 +1477,7 @@ function renderArtifactTable(artifacts) {
     return `
     <tr class="clickable-row" onclick="openArtifactDetail(${a.id})">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="art-chk" value="${a.id}"></td>
-      <td><strong>${esc(a.name)}</strong><div style="font-size:11px;color:var(--text-secondary);">${esc(a.domain || '')} · ${esc(a.process_id || '')}</div></td>
+      <td><strong>${esc(a.name)}</strong><div style="font-size:11px;color:var(--text-secondary);">${esc(a.domain || '')} · ${esc(a.process_id || '')}</div>${a.data_source === 'real' ? `<span class="badge badge-green" style="font-size:9px;margin-top:3px;">Live</span>` : `<span class="badge badge-blue" style="font-size:9px;margin-top:3px;">Demo</span>`}</td>
       <td><span class="badge badge-gray">${esc(a.artifact_type || 'Process')}</span></td>
       <td>${esc(a.trigger_type || '—')}</td>
       <td><span class="badge ${a.readiness === 'Auto' ? 'badge-green' : a.readiness === 'Manual' ? 'badge-red' : 'badge-yellow'}">${a.readiness || 'Partial'}</span></td>

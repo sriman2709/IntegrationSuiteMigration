@@ -31,13 +31,14 @@ async function parseAndPersist(filePath, originalName, projectId, sourceName) {
         (source_id, project_id, process_id, name, domain, platform, artifact_type, trigger_type,
          shapes_count, connectors_count, maps_count, has_scripting, scripting_detail, error_handling,
          dependencies_count, primary_connector, complexity_score, complexity_level, tshirt_size,
-         effort_days, readiness, raw_metadata, raw_xml)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *`,
+         effort_days, readiness, raw_metadata, raw_xml, data_source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
       [source.id, projectId, art.process_id, art.name, art.domain, 'mulesoft',
        art.artifact_type, art.trigger_type, art.shapes_count, art.connectors_count, art.maps_count,
        art.has_scripting, art.scripting_detail, art.error_handling, art.dependencies_count,
        art.primary_connector, art.complexity_score, art.complexity_level, art.tshirt_size,
-       art.effort_days, art.readiness, JSON.stringify(art.raw_metadata || {}), art.raw_xml || null]
+       art.effort_days, art.readiness, JSON.stringify(art.raw_metadata || {}), art.raw_xml || null,
+       art.raw_xml ? 'real' : 'mock']
     );
     inserted.push(r.rows[0]);
   }

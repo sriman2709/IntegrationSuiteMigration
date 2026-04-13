@@ -77,7 +77,7 @@ class PIPOConnector {
       errorHandling: { type: artifact.error_handling, alertChannel: 'Email', retryEnabled: artifact.error_handling !== 'none', retryAttempts: 2 },
       dependencies: Array.from({ length: artifact.dependencies_count || 1 }, (_, i) => `Dependency_${i + 1}`),
       iflowAdapters: this._inferIFlowAdapters(artifact),
-      _source: 'generated', _mode: 'mock'
+      _source: 'mock', _mode: 'mock'
     };
   }
 

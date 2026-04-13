@@ -20,26 +20,45 @@ const { extractBw6PlatformData } = require('../services/iflow-generator-tibco-bw
 const { extractBw5PlatformData } = require('../services/iflow-generator-tibco-bw5');
 
 // ── Resolve real platform data: prefer raw_xml extraction over mock connector ─
-async function resolvePlatformData(art) {
-  if (art.raw_xml && art.platform === 'mulesoft') {
-    const real = await extractMuleSoftPlatformData(art);
-    real._source = real._source || 'raw_xml';
-    return real;
+// ── Real extraction path — called only when data_source = 'real' ─────────────
+async function resolveRealPlatformData(art) {
+  if (art.platform === 'mulesoft') {
+    const pd = await extractMuleSoftPlatformData(art);
+    pd._source = pd._source || 'raw_xml';
+    return pd;
   }
   // BW6: platform='tibco', artifact_type='BW6Process'
-  if (art.raw_xml && art.platform === 'tibco' && art.artifact_type === 'BW6Process') {
-    const real = await extractBw6PlatformData(art);
-    real._source = real._source || 'raw_xml_bw6';
-    return real;
+  if (art.platform === 'tibco' && art.artifact_type === 'BW6Process') {
+    const pd = await extractBw6PlatformData(art);
+    pd._source = pd._source || 'raw_xml_bw6';
+    return pd;
   }
   // BW5: platform='tibco', artifact_type='ProcessDef'
-  if (art.raw_xml && art.platform === 'tibco' && art.artifact_type === 'ProcessDef') {
-    const real = await extractBw5PlatformData(art);
-    real._source = real._source || 'raw_xml_bw5';
-    return real;
+  if (art.platform === 'tibco' && art.artifact_type === 'ProcessDef') {
+    const pd = await extractBw5PlatformData(art);
+    pd._source = pd._source || 'raw_xml_bw5';
+    return pd;
   }
+  // Unknown real platform — use MuleSoft extractor shape as safe default
+  const pd = await extractMuleSoftPlatformData(art);
+  pd._source = 'raw_xml';
+  return pd;
+}
+
+// ── Mock/demo path — called only when data_source = 'mock' ──────────────────
+async function resolveMockPlatformData(art) {
   const connector = getConnector(art.platform || art.project_platform);
-  return connector.getArtifactData(art);
+  const pd = await connector.getArtifactData(art);
+  pd._source = pd._source || 'mock';
+  return pd;
+}
+
+// ── Public dispatcher — explicit routing, no silent fallback ─────────────────
+async function resolvePlatformData(art) {
+  // data_source column is authoritative; raw_xml presence is fallback for
+  // rows that pre-date the migration and haven't been back-filled yet.
+  const isReal = art.data_source === 'real' || (!art.data_source && art.raw_xml);
+  return isReal ? resolveRealPlatformData(art) : resolveMockPlatformData(art);
 }
 
 // ── List artifacts for a project ──────────────────────────────────────────────
@@ -459,9 +478,12 @@ router.post('/bulk-convert', async (req, res) => {
 
     for (const art of artifacts) {
       try {
-        const platformData = await resolvePlatformData(art);
-        const convOutput   = runConversion(art, platformData);
-        const pkg          = generateIFlowPackage(art, platformData, convOutput);
+        const platformData   = await resolvePlatformData(art);
+        const convOutput     = runConversion(art, platformData);
+        // Real path: prevent stale conv.iflow_xml from overriding dedicated BPMN builders
+        const convForPackage = platformData._source?.startsWith('raw_xml')
+          ? { ...convOutput, iflow_xml: null } : convOutput;
+        const pkg            = generateIFlowPackage(art, platformData, convForPackage);
 
         const runCount  = await pool.query('SELECT COUNT(*) FROM conversion_runs WHERE artifact_id = $1', [art.id]);
         const runNumber = parseInt(runCount.rows[0].count) + 1;
@@ -513,12 +535,14 @@ router.post('/:id/convert', async (req, res) => {
     if (!artResult.rows.length) return res.status(404).json({ error: 'Not found' });
     const art = artResult.rows[0];
 
-    // Use real raw_xml extractor for MuleSoft; mock connector for others
-    const platformData = await resolvePlatformData(art);
-    const convOutput   = runConversion(art, platformData);
+    const platformData   = await resolvePlatformData(art);
+    const convOutput     = runConversion(art, platformData);
+    // Real path: prevent stale conv.iflow_xml from overriding dedicated BPMN builders
+    const convForPackage = platformData._source?.startsWith('raw_xml')
+      ? { ...convOutput, iflow_xml: null } : convOutput;
 
     // Generate the actual iFlow package to capture iflow_xml
-    const pkg = generateIFlowPackage(art, platformData, convOutput);
+    const pkg = generateIFlowPackage(art, platformData, convForPackage);
 
     // Get next run number
     const runCount = await pool.query('SELECT COUNT(*) FROM conversion_runs WHERE artifact_id = $1', [id]);
@@ -663,13 +687,15 @@ router.get('/:id/download', async (req, res) => {
       'SELECT convert_output FROM conversion_runs WHERE artifact_id = $1 ORDER BY run_number DESC LIMIT 1',
       [id]
     );
-    const convOutput = runResult.rows.length ? runResult.rows[0].convert_output : null;
+    const convRaw = runResult.rows.length ? runResult.rows[0].convert_output : null;
 
-    // Use real raw_xml extraction for MuleSoft; connector for others
-    const platformData = await resolvePlatformData(art);
+    const platformData   = await resolvePlatformData(art);
+    // Real path: prevent stale stored conv.iflow_xml from overriding dedicated BPMN builders
+    const convForPackage = platformData._source?.startsWith('raw_xml')
+      ? { ...convRaw, iflow_xml: null } : convRaw;
 
     // Generate iFlow package ZIP
-    const pkg = generateIFlowPackage(art, platformData, convOutput);
+    const pkg = generateIFlowPackage(art, platformData, convForPackage);
 
     // Stream as ZIP download
     res.setHeader('Content-Type', 'application/zip');
