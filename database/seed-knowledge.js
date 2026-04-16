@@ -478,6 +478,60 @@ S11: UI conversion pipeline (status, report, bulk convert)
 S12: MuleSoft 4 support (Mule 4 namespaces + DW 2.0)
 S13: SAP PI/PO migration
 S14: End-to-end validation + Azure deploy + SAP IS sandbox import test`
+  },
+
+  // ── SAP IS IMPORT — CONFIRMED PRODUCTION FINDINGS (2026-04-16) ──────────────
+  {
+    category: 'edge_case', platform: 'sap-is',
+    title: 'SAP IS iFlow Upload: MANIFEST.MF must contain Content-Type: iFlowBundle',
+    tags: ['manifest', 'import', 'upload', 'iflow-bundle', 's13'],
+    content: `Problem: SAP Integration Suite rejects iFlow ZIP with "Invalid resource type" if MANIFEST.MF
+lacks the Content-Type header.
+
+Required MANIFEST.MF fields for SAP IS to accept the bundle:
+  Manifest-Version: 1.0
+  Bundle-ManifestVersion: 2
+  Bundle-Name: <iflow name>
+  Bundle-SymbolicName: <iflow id>
+  Bundle-Version: 1.0.0
+  Content-Type: iFlowBundle      ← CRITICAL: without this IS refuses the file
+  Created-By: <tool name>
+  Package-Name: <package name>
+
+Do NOT use custom fields like artifact-type, artifact-version, Build-Timestamp etc.
+SAP IS ignores them and their presence does not cause errors, but Content-Type is non-negotiable.
+
+Fixed in: engine/iflow.js buildManifest() — commit abd0021 (2026-04-16)`
+  },
+  {
+    category: 'edge_case', platform: 'sap-is',
+    title: 'SAP IS iFlow Upload: must be a content package ZIP, not a bare iFlow ZIP',
+    tags: ['content-package', 'import', 'upload', 'metainfo', 'zip-structure', 's13'],
+    content: `Problem: Even after fixing MANIFEST.MF, uploading a bare iFlow ZIP via "Add Integration Flow → Upload"
+fails with "Could not import this file; select a valid content package".
+
+Root cause: SAP IS always expects a content package wrapper, even for a single iFlow.
+
+Required outer ZIP structure:
+  <PackageName>_v1.0.zip          ← this is what you upload to SAP IS
+  ├── metainfo.prop               ← package descriptor (mandatory)
+  └── <iflow-id>.zip              ← inner iFlow ZIP
+      ├── META-INF/MANIFEST.MF
+      └── src/main/resources/
+          ├── scenarioflows/integrationflow/<iflow-id>.iflw
+          ├── parameters.prop
+          ├── mapping/*.xsl
+          └── script/*.groovy
+
+metainfo.prop format:
+  bundleid=<package-id>
+  bundleName=<package-name>
+  shortText=<description>
+  vendor=<vendor>
+  version=1.0.0
+
+Fixed in: engine/iflow.js generateIFlowPackage() — commit 6c3bc66 (2026-04-16)
+The outer ZIP is now what the download endpoint returns.`
   }
 ];
 
