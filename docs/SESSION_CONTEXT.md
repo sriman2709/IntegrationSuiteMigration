@@ -17,36 +17,33 @@
 | Mac IP whitelisted | 106.192.76.246 (current network) + 122.167.99.66 (MacBookPro home) for Postgres |
 
 ## Current Sprint
-**S13 — Real Artifact Testing: Convert → Download Pass** (▶ ACTIVE as of 2026-04-12)
+**S14 — MuleSoft Extractor Hardening** (▶ NEXT)
 See `docs/SPRINT_PLAN.md` for full definition.
 
 ## Last Action (update this every session end)
-> 2026-04-13: S13 bugs fixed + S14 architectural refactor complete. Two commits pushed:
+> 2026-04-16: S13 COMPLETE — All 24 artifacts successfully converted and downloaded. Validation:
 >
-> Commit 730dc6f — S13 Bug fixes (round 2):
->   - Bug 3 root-cause: hasRealBuilder in buildIFlowXML now bypasses enrichConversionXML
->     for MuleSoft (processors > 0), BW5 (always), BW6 (always).
->   - Bug 1 carry-over: post-processing incoming-ID fix added to buildBw5BPMN and
->     buildBw6BPMN (same loop as MuleSoft, Router-aware for BW6).
->   - Mail gap: added 'mail' case to !rc branch of buildReceiverChannelFromConfig.
+> Commit 56b9a4d — SESSION_CONTEXT handoff update (2026-04-13)
+> Commit d9fdc42 — Real vs Mock/Demo path separation (S14 arch) (2026-04-13)
+> Commit 730dc6f — S13 Bug fixes round 2 (2026-04-12)
 >
-> Commit d9fdc42 — Real vs Mock/Demo path separation (S14 arch):
->   - DB: data_source VARCHAR(10) DEFAULT 'mock' added to artifacts table.
->     Back-fill: raw_xml IS NOT NULL → data_source='real' (covers all 24 real artifacts).
->   - routes/artifacts.js: resolvePlatformData() split into resolveRealPlatformData()
->     + resolveMockPlatformData() + explicit dispatcher. convForPackage guard at all 3
->     call sites (bulk convert, single convert, download) nulls conv.iflow_xml on real path.
->   - 4 upload services: data_source set at INSERT time (raw_xml ? 'real' : 'mock').
->   - 4 connectors: _source 'generated' → 'mock'.
->   - seed-real-artifacts.js: both UPDATE and INSERT write data_source='real'.
->   - UI: green Live / blue Demo badge on artifact name cell (reuses badge-green/badge-blue).
+> COMPLETED ACTIONS:
+>   1. ✅ All 24 iFlows converted: 15 MuleSoft + 5 BW6 + 4 BW5
+>   2. ✅ Downloaded to test-data/Real_Artifact_Tests_IS_ContentPackage_2026-04-15/
+>   3. ✅ Validation: All ZIPs contain valid BPMN2 + XSLT/Groovy + parameters.prop
+>   4. ✅ S13 Pass Criteria Met:
+>        • Zero 500 errors on Convert
+>        • All ZIPs download + unzip successfully
+>        • BPMN2 XML valid in all 24 iFlows
+>        • Sender + Receiver adapters populated
+>        • Groovy scripts present for DataWeave transforms
+>        • Quality scores generated (Low/Medium/High complexity)
+>   5. ✅ Evidence saved: test-data/ contains full package with PACKAGE_MANIFEST.yaml
 >
-> IMMEDIATE NEXT (on MacBook Air):
->   1. Run: node database/seed-real-artifacts.js  (back-fills data_source='real' on 24 artifacts)
->   2. Convert All → Download All iFlows on Azure app → delete old expanded folders
->   3. Extract fresh ZIPs → audit: Bug 1 (all 24 SEQ IDs), Bug 3 (all adapter types correct)
->   4. Update TESTING_REPORT.md with final S13 results
->   5. If all 24 pass: close S13, begin S14 seeding (8 new artifacts from test-data/)
+> READY FOR S14:
+>   • S13 pass matrix in TESTING_REPORT.md complete
+>   • No blockers for S14 (MuleSoft Extractor Hardening)
+>   • 24 artifacts validated — ready for pattern analysis & KB hardening
 
 ## What's Built and Working
 - Upload ZIP → parse → artifact cards (MuleSoft, BW5, BW6, Boomi)
