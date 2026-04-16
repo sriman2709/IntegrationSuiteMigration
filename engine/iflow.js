@@ -92,16 +92,9 @@ Bundle-ManifestVersion: 2
 Bundle-Name: ${iflowName}
 Bundle-SymbolicName: ${iflowId}
 Bundle-Version: 1.0.0
-Bundle-Vendor: Sierra Digital
-Bundle-Description: Migrated from ${(artifact.platform || 'source').toUpperCase()} - ${artifact.name}
+Content-Type: iFlowBundle
 Created-By: IS Migration Tool (Sierra Digital)
 Package-Name: ${pkgName}
-artifact-type: IFlow
-artifact-version: 1.0.0
-Build-Timestamp: ${now}
-Source-Platform: ${(artifact.platform || 'unknown').toUpperCase()}
-Source-Artifact: ${artifact.name}
-Domain: ${artifact.domain || 'INT'}
 `;
 }
 
