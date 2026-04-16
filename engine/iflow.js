@@ -74,9 +74,19 @@ function generateIFlowPackage(artifact, platformData, conversionOutput) {
     });
   }
 
+  // Wrap inner iFlow ZIP inside a SAP IS content package ZIP (required for IS import)
+  const innerBuffer = zip.toBuffer();
+  const pkgId = pkgName.replace(/[^a-zA-Z0-9_\-]/g, '_');
+
+  const outerZip = new AdmZip();
+  outerZip.addFile('metainfo.prop', Buffer.from(
+    `bundleid=${pkgId}\nbundleName=${pkgName}\nshortText=Migrated from ${(artifact.platform || 'source').toUpperCase()} - ${artifact.name}\nvendor=Sierra Digital\nversion=1.0.0\n`
+  ));
+  outerZip.addFile(`${iflowId}.zip`, innerBuffer);
+
   return {
-    buffer: zip.toBuffer(),
-    filename: `${iflowId}_v1.0.zip`,
+    buffer: outerZip.toBuffer(),
+    filename: `${pkgId}_v1.0.zip`,
     iflowId,
     iflowName,
     packageName: pkgName
