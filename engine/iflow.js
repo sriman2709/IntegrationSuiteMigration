@@ -19,6 +19,69 @@ const { buildBw6BPMN } = require('./iflow-tibco-bw6-bpmn');
 const { buildBw5BPMN } = require('./iflow-tibco-bw5-bpmn');
 const { buildGroovyFromDataWeave } = require('../services/iflow-generator-mulesoft');
 
+// ── STORED ZIP builder (no compression — guaranteed Java-compatible) ──────────
+// adm-zip compresses all entries with DEFLATE (method 8). SAP IS's import parser
+// reads metainfo.prop raw, so DEFLATE-compressed bytes produce garbled text.
+// This writer creates method=0 (STORED) entries, safe for all ZIP readers.
+
+const CRC32_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  return t;
+})();
+
+function crc32(buf) {
+  let c = -1;
+  for (let i = 0; i < buf.length; i++) c = CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+function buildStoredZip(entries) {
+  const parts = [];
+  const centralDirs = [];
+  let offset = 0;
+
+  for (const { name, data } of entries) {
+    const nb = Buffer.from(name, 'utf8');
+    const crc = crc32(data);
+    const sz  = data.length;
+
+    const lh = Buffer.alloc(30 + nb.length);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+    lh.writeUInt16LE(0, 6); lh.writeUInt16LE(0, 8);   // flags=0, method=STORED
+    lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0, 12); // mod time/date
+    lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(sz, 18); lh.writeUInt32LE(sz, 22);
+    lh.writeUInt16LE(nb.length, 26); lh.writeUInt16LE(0, 28);
+    nb.copy(lh, 30);
+
+    const cd = Buffer.alloc(46 + nb.length);
+    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(0, 8); cd.writeUInt16LE(0, 10);  // flags=0, method=STORED
+    cd.writeUInt16LE(0, 12); cd.writeUInt16LE(0, 14); // mod time/date
+    cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(sz, 20); cd.writeUInt32LE(sz, 24);
+    cd.writeUInt16LE(nb.length, 28); cd.writeUInt16LE(0, 30); cd.writeUInt16LE(0, 32);
+    cd.writeUInt16LE(0, 34); cd.writeUInt16LE(0, 36); cd.writeUInt32LE(0, 38);
+    cd.writeUInt32LE(offset, 42);
+    nb.copy(cd, 46);
+
+    parts.push(lh, data);
+    centralDirs.push(cd);
+    offset += lh.length + sz;
+  }
+
+  const cdSize = centralDirs.reduce((s, c) => s + c.length, 0);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(0, 4); eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(cdSize, 12); eocd.writeUInt32LE(offset, 16); eocd.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...parts, ...centralDirs, eocd]);
+}
+
 // ── Main entry ────────────────────────────────────────────────────────────────
 
 function generateIFlowPackage(artifact, platformData, conversionOutput, overridePkgName) {
@@ -74,13 +137,14 @@ function generateIFlowPackage(artifact, platformData, conversionOutput, override
     });
   }
 
-  // Wrap inner iFlow ZIP inside a SAP IS content package ZIP (required for IS import)
+  // Wrap inner iFlow ZIP inside a SAP IS content package ZIP (required for IS import).
+  // Use buildStoredZip (method=0) — adm-zip uses DEFLATE which breaks SAP IS's
+  // metainfo.prop parser if it reads the raw compressed bytes.
   const innerBuffer = zip.toBuffer();
   const pkgId = pkgName.replace(/[^a-zA-Z0-9_\-]/g, '_');
   const creationDate = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-  const outerZip = new AdmZip();
-  outerZip.addFile('metainfo.prop', Buffer.from(
+  const metainfoProp = Buffer.from(
     `bundleid=${pkgId}\n` +
     `bundleName=${pkgName}\n` +
     `shortText=Migrated from ${(artifact.platform || 'source').toUpperCase()} - ${artifact.name}\n` +
@@ -89,13 +153,17 @@ function generateIFlowPackage(artifact, platformData, conversionOutput, override
     `SupportedPlatform=CloudIntegration\n` +
     `mode=DESIGN_TIME\n` +
     `CreationDate=${creationDate}\n`
-  ));
-  outerZip.addFile(`${iflowId}.zip`, innerBuffer);
+  );
+
+  const outerBuffer = buildStoredZip([
+    { name: 'metainfo.prop',      data: metainfoProp },
+    { name: `${iflowId}.zip`,     data: innerBuffer  }
+  ]);
 
   return {
-    buffer: outerZip.toBuffer(),
+    buffer: outerBuffer,
     bundleBuffer: innerBuffer,
-    filename: `${pkgId}_v1.0.zip`,
+    filename: `${pkgId}.zip`,
     iflowId,
     iflowName,
     packageName: pkgName
@@ -105,10 +173,9 @@ function generateIFlowPackage(artifact, platformData, conversionOutput, override
 // ── MANIFEST.MF ───────────────────────────────────────────────────────────────
 
 function buildManifest(iflowId, iflowName, pkgName, artifact) {
-  const now = new Date().toISOString().split('T')[0];
   return `Manifest-Version: 1.0
 Bundle-ManifestVersion: 2
-Bundle-Name: ${iflowName}
+Bundle-Name: ${iflowId}
 Bundle-SymbolicName: ${iflowId}
 Bundle-Version: 1.0.0
 Content-Type: iFlowBundle
@@ -933,4 +1000,4 @@ function buildPackageName(artifact) {
   return `${artifact.domain || 'INT'}_Migration_Package_v1`;
 }
 
-module.exports = { generateIFlowPackage, buildIFlowId, buildIFlowName, buildPackageName };
+module.exports = { generateIFlowPackage, buildIFlowId, buildIFlowName, buildPackageName, buildStoredZip };

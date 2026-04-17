@@ -3,7 +3,7 @@ const router = express.Router();
 const { pool } = require('../database/db');
 const AdmZip = require('adm-zip');
 const { getConnector } = require('../connectors');
-const { generateIFlowPackage, buildPackageName } = require('../engine/iflow');
+const { generateIFlowPackage, buildPackageName, buildStoredZip } = require('../engine/iflow');
 const { generateHTMLReport } = require('../engine/pdf');
 
 // List all projects with artifact counts
@@ -173,8 +173,8 @@ router.get('/:id/download', async (req, res) => {
     const runMap = {};
     runRows.rows.forEach(r => { runMap[r.artifact_id] = r.convert_output; });
 
-    // SAP IS content package ZIP — metainfo.prop at root + individual iFlow bundle ZIPs
-    const outerZip = new AdmZip();
+    // SAP IS content package ZIP — STORED (no DEFLATE) so metainfo.prop parses correctly in SAP IS
+    const pkgEntries = [];
     const safeProj = project.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
     // pkgId must be consistent with the Package-Name written into each artifact's MANIFEST.MF
     // buildPackageName(artifact) uses artifact.domain || 'INT'; project artifacts default to 'INT'
@@ -183,8 +183,8 @@ router.get('/:id/download', async (req, res) => {
     const timestamp = new Date().toISOString().split('T')[0];
     const creationDate = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-    // metainfo.prop at root — required by SAP IS for content package import
-    outerZip.addFile('metainfo.prop', Buffer.from(
+    // metainfo.prop — added last so it's first in the ZIP (SAP IS reads it first)
+    const metainfoData = Buffer.from(
       `bundleid=${pkgId}\n` +
       `bundleName=${project.name}\n` +
       `shortText=${project.name} - Migrated by IS Migration Tool (Sierra Digital)\n` +
@@ -193,7 +193,7 @@ router.get('/:id/download', async (req, res) => {
       `SupportedPlatform=CloudIntegration\n` +
       `mode=DESIGN_TIME\n` +
       `CreationDate=${creationDate}\n`
-    ));
+    );
 
     // Package manifest (for reference — SAP IS ignores non-ZIP / non-prop files)
     const manifestLines = [
@@ -221,7 +221,7 @@ router.get('/:id/download', async (req, res) => {
         const pkg = generateIFlowPackage(art, platformData, convOutput, pkgName);
 
         // Add inner bundle ZIP at root (not the outer content-package wrapper)
-        outerZip.addFile(`${pkg.iflowId}.zip`, pkg.bundleBuffer);
+        pkgEntries.push({ name: `${pkg.iflowId}.zip`, data: pkg.bundleBuffer });
 
         manifestLines.push(`  - id: ${pkg.iflowId}`);
         manifestLines.push(`    name: ${pkg.iflowName}`);
@@ -249,18 +249,16 @@ router.get('/:id/download', async (req, res) => {
     manifestLines.push(`  errors: ${errorCount}`);
     manifestLines.push(`  total_effort_days: ${artifacts.reduce((s, a) => s + (a.effort_days || 0), 0)}`);
 
-    outerZip.addFile('PACKAGE_MANIFEST.yaml', Buffer.from(manifestLines.join('\n') + '\n'));
-
-    // Add a README
-    const readme = buildPackageReadme(project, artifacts, successCount);
-    outerZip.addFile('README.txt', Buffer.from(readme));
+    // Build STORED outer ZIP: metainfo.prop first, then all iFlow bundle ZIPs
+    pkgEntries.unshift({ name: 'metainfo.prop', data: metainfoData });
+    const outerBuffer = buildStoredZip(pkgEntries);
 
     const filename = `${safeProj}_IS_ContentPackage_${timestamp}.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('X-Package-Name', pkgName);
     res.setHeader('X-Artifact-Count', String(successCount));
-    res.send(outerZip.toBuffer());
+    res.send(outerBuffer);
 
   } catch (err) {
     console.error('Project download error:', err);
