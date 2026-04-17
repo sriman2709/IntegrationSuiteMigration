@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../database/db');
-const AdmZip = require('adm-zip');
 const { getConnector } = require('../connectors');
 const { generateIFlowPackage, buildPackageName, buildStoredZip } = require('../engine/iflow');
 const { generateHTMLReport } = require('../engine/pdf');
