@@ -21,11 +21,11 @@ const { buildGroovyFromDataWeave } = require('../services/iflow-generator-muleso
 
 // ── Main entry ────────────────────────────────────────────────────────────────
 
-function generateIFlowPackage(artifact, platformData, conversionOutput) {
+function generateIFlowPackage(artifact, platformData, conversionOutput, overridePkgName) {
   const zip = new AdmZip();
   const iflowId   = buildIFlowId(artifact);
   const iflowName = buildIFlowName(artifact);
-  const pkgName   = buildPackageName(artifact);
+  const pkgName   = overridePkgName || buildPackageName(artifact);
 
   // 1. MANIFEST.MF
   zip.addFile('META-INF/MANIFEST.MF', Buffer.from(buildManifest(iflowId, iflowName, pkgName, artifact)));

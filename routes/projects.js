@@ -175,9 +175,11 @@ router.get('/:id/download', async (req, res) => {
 
     // SAP IS content package ZIP — metainfo.prop at root + individual iFlow bundle ZIPs
     const outerZip = new AdmZip();
-    const pkgName  = buildPackageName({ domain: project.platform || 'INT', ...project });
-    const pkgId    = pkgName.replace(/[^a-zA-Z0-9_\-]/g, '_');
     const safeProj = project.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    // pkgId must be consistent with the Package-Name written into each artifact's MANIFEST.MF
+    // buildPackageName(artifact) uses artifact.domain || 'INT'; project artifacts default to 'INT'
+    const pkgId    = `${safeProj}_IS_Package`.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const pkgName  = pkgId;
     const timestamp = new Date().toISOString().split('T')[0];
     const creationDate = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
@@ -185,7 +187,7 @@ router.get('/:id/download', async (req, res) => {
     outerZip.addFile('metainfo.prop', Buffer.from(
       `bundleid=${pkgId}\n` +
       `bundleName=${project.name}\n` +
-      `shortText=${project.name} — Migrated by IS Migration Tool (Sierra Digital)\n` +
+      `shortText=${project.name} - Migrated by IS Migration Tool (Sierra Digital)\n` +
       `vendor=Sierra Digital\n` +
       `version=1.0.0\n` +
       `SupportedPlatform=CloudIntegration\n` +
@@ -216,7 +218,7 @@ router.get('/:id/download', async (req, res) => {
         const platformData = await connector.getArtifactData(art);
         const convOutput = runMap[art.id] || null;
 
-        const pkg = generateIFlowPackage(art, platformData, convOutput);
+        const pkg = generateIFlowPackage(art, platformData, convOutput, pkgName);
 
         // Add inner bundle ZIP at root (not the outer content-package wrapper)
         outerZip.addFile(`${pkg.iflowId}.zip`, pkg.bundleBuffer);
