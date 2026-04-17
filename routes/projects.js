@@ -173,13 +173,27 @@ router.get('/:id/download', async (req, res) => {
     const runMap = {};
     runRows.rows.forEach(r => { runMap[r.artifact_id] = r.convert_output; });
 
-    // Outer content package ZIP
+    // SAP IS content package ZIP — metainfo.prop at root + individual iFlow bundle ZIPs
     const outerZip = new AdmZip();
     const pkgName  = buildPackageName({ domain: project.platform || 'INT', ...project });
+    const pkgId    = pkgName.replace(/[^a-zA-Z0-9_\-]/g, '_');
     const safeProj = project.name.replace(/[^a-zA-Z0-9_\-]/g, '_');
     const timestamp = new Date().toISOString().split('T')[0];
+    const creationDate = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-    // Package manifest
+    // metainfo.prop at root — required by SAP IS for content package import
+    outerZip.addFile('metainfo.prop', Buffer.from(
+      `bundleid=${pkgId}\n` +
+      `bundleName=${project.name}\n` +
+      `shortText=${project.name} — Migrated by IS Migration Tool (Sierra Digital)\n` +
+      `vendor=Sierra Digital\n` +
+      `version=1.0.0\n` +
+      `SupportedPlatform=CloudIntegration\n` +
+      `mode=DESIGN_TIME\n` +
+      `CreationDate=${creationDate}\n`
+    ));
+
+    // Package manifest (for reference — SAP IS ignores non-ZIP / non-prop files)
     const manifestLines = [
       `# SAP Integration Suite Content Package`,
       `# Project: ${project.name}`,
@@ -192,7 +206,7 @@ router.get('/:id/download', async (req, res) => {
       `artifacts:`
     ];
 
-    // Build each iFlow package and add to outer ZIP
+    // Build each iFlow package and add the inner bundle ZIP directly to the package root
     let successCount = 0;
     let errorCount   = 0;
 
@@ -204,12 +218,12 @@ router.get('/:id/download', async (req, res) => {
 
         const pkg = generateIFlowPackage(art, platformData, convOutput);
 
-        // Add as nested ZIP inside the outer package
-        outerZip.addFile(`iflows/${pkg.filename}`, pkg.buffer);
+        // Add inner bundle ZIP at root (not the outer content-package wrapper)
+        outerZip.addFile(`${pkg.iflowId}.zip`, pkg.bundleBuffer);
 
         manifestLines.push(`  - id: ${pkg.iflowId}`);
         manifestLines.push(`    name: ${pkg.iflowName}`);
-        manifestLines.push(`    file: iflows/${pkg.filename}`);
+        manifestLines.push(`    file: ${pkg.iflowId}.zip`);
         manifestLines.push(`    complexity: ${art.complexity_level || 'Medium'}`);
         manifestLines.push(`    status: ${art.status || 'discovered'}`);
         manifestLines.push(`    readiness: ${art.readiness || 'Manual'}`);
