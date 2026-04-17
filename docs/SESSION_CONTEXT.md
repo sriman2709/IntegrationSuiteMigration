@@ -21,23 +21,35 @@
 See `docs/SPRINT_PLAN.md` for full definition.
 
 ## Last Action (update this every session end)
-> 2026-04-17: SAP IS Import Fix session — iFlow ZIPs now correctly importable into Integration Suite.
+> 2026-04-17 (session 2): SAP IS Import Fix — Root cause found and fixed. ZIP not yet confirmed working.
 >
-> Commits:
->   abd0021 — fix: MANIFEST.MF Content-Type: iFlowBundle (was artifact-type: IFlow)
->   6c3bc66 — fix: wrap iFlow ZIP in content package (metainfo.prop + inner ZIP)
->   996fc56 — docs: seed KB with 2 SAP IS import findings
+> Commits (this session):
+>   31831ca — fix: add SupportedPlatform/mode to metainfo.prop; fix project download structure
+>   7ff7851 — fix: align Package-Name/bundleid; remove em-dash from metainfo.prop
+>   eccc398 — fix: use STORED ZIP for outer content package (ROOT CAUSE FIX)
+>   8b580fb — chore: remove unused AdmZip import from projects route
 >
-> COMPLETED ACTIONS:
->   1. ✅ Fixed "Invalid resource type" — added Content-Type: iFlowBundle to MANIFEST.MF
->   2. ✅ Fixed "select a valid content package" — outer ZIP now has metainfo.prop wrapper
->   3. ✅ KB seeded — 38 entries in knowledge_base (2 new SAP IS import findings)
->   4. ✅ OPENAI_API_KEY updated in Azure App Settings (not committed to git)
->   5. ✅ Current Mac IP (106.219.177.58) whitelisted in Azure Postgres firewall (cop-postgres-srv, COP-Platform RG)
+> ROOT CAUSE IDENTIFIED:
+>   adm-zip compresses ALL entries with DEFLATE (method=8), including metainfo.prop.
+>   SAP IS's content package importer reads metainfo.prop raw bytes during quick validation
+>   (does NOT decompress) — so it received garbled deflate output and rejected the package.
+>   Fix: replaced adm-zip outer ZIP with custom buildStoredZip() (method=0, STORED).
+>   metainfo.prop is now plain text bytes, readable by SAP IS without decompression.
+>
+> COMPLETED ACTIONS (this session):
+>   1. ✅ Added SupportedPlatform=CloudIntegration + mode=DESIGN_TIME to metainfo.prop
+>   2. ✅ Fixed project download — was triple-nested; now proper content package structure
+>   3. ✅ Fixed bundleid/Package-Name mismatch (project download pkgId = safeProj_IS_Package)
+>   4. ✅ Removed em-dash from shortText (non-ASCII breaks Java ISO-8859-1 props parser)
+>   5. ✅ Bundle-Name now equals Bundle-SymbolicName (no spaces — matches SAP IS export format)
+>   6. ✅ generateIFlowPackage now returns bundleBuffer (inner) + buffer (outer content pkg)
+>   7. ✅ buildStoredZip() added to engine/iflow.js — pure Node.js, no external deps
+>   8. ✅ Outer filename changed from INT_Migration_Package_v1_v1.0.zip → INT_Migration_Package_v1.zip
 >
 > PENDING:
->   • Colleague to re-download iFlow ZIPs and re-test upload in SAP Integration Suite
+>   • Re-download from live app AFTER eccc398 deploys and re-test SAP IS import
 >   • Confirm import succeeds end-to-end (no further errors)
+>   • If import succeeds but deploy fails → that is a separate BPMN2 content issue, not ZIP format
 >   • S14 (MuleSoft Extractor Hardening) not yet started
 
 > 2026-04-16: S13 COMPLETE — All 24 artifacts successfully converted and downloaded. Validation:
